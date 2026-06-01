@@ -20,10 +20,10 @@ From source:
 
 ```bash
 git clone https://github.com/CrazyJassBread/nesylink.git
-cd NeuroLink
+cd nesylink
 python -m venv .venv
 source .venv/bin/activate
-#use '.venv\Scripts\Activate.ps1' for PowerShell
+# use '.venv\Scripts\Activate.ps1' for PowerShell
 pip install -e .
 ```
 
@@ -149,9 +149,3 @@ For PPO-style and Dreamer-style configuration notes, see
 - [Environment API](docs/reference/env-api.md)
 - [Rewards](docs/reference/rewards.md)
 - [Tasks](docs/reference/tasks-and-validators.md)
-
-## Development Checks
-
-```bash
-python -m unittest discover -s tests
-```

@@ -10,15 +10,18 @@ reinforcement learning environment.
      Gymnasium usage flow.
 2. `guides/map-creation.md`
    - How to create JSON maps with rooms, objects, exits, and validation rules.
-3. `reference/rewards.md`
+3. `reference/game-content.md`
+   - Current player capabilities, items, monsters, map object meanings, exit
+     requirements, and built-in map content.
+4. `reference/rewards.md`
    - Built-in reward modules, reward signals, weight overrides, and custom
      rewards.
-4. `guides/training-config.md`
+5. `guides/training-config.md`
    - Practical training configuration patterns for random rollouts, PPO-style
      loops, and Dreamer-style wrappers.
-5. `reference/env-api.md`
+6. `reference/env-api.md`
    - Exact `reset`, `step`, action, observation, and `info` contracts.
-6. `reference/tasks-and-validators.md`
+7. `reference/tasks-and-validators.md`
    - Python task registry and task-level environment construction.
 
 ## Documentation Scope
