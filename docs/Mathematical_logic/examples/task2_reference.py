@@ -28,7 +28,7 @@ from nesylink.env import make_env
 Position = tuple[int, int]
 
 TASK2_INITIAL_MONSTER = (2, 2)
-TASK2_MONSTER_AFTER_FIRST_HIT = (1, 2)
+TASK2_MONSTER_AFTER_FIRST_HIT = (2, 2)
 TASK2_CHEST = (1, 3)
 TASK2_EXITS = {(0, 3), (0, 4)}
 TASK2_TRAPS = {
