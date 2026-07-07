@@ -1,0 +1,436 @@
+namespace NesyLinkFormalization
+
+/-!
+  Basic shared definitions for the NesyLink mathematical-logic project.
+
+  This file is intentionally task-independent.
+
+  It contains only the common symbolic vocabulary used by all task proofs:
+  positions, actions, directions, map bounds, symbolic state, safety predicate,
+  and a few small lemmas.
+
+  Task-specific concepts such as Task1Goal, BridgeState, RoomMemory, or
+  concrete task maps should be defined in separate files.
+-/
+
+/- Basic grid position.
+
+   NesyLink maps use a 10 x 8 tile grid.
+   A position is represented as (x, y), where x is the column and y is the row.
+-/
+abbrev Position := Nat × Nat
+
+def mapWidth : Nat := 10
+def mapHeight : Nat := 8
+
+def inBounds (p : Position) : Prop :=
+  p.1 < mapWidth ∧ p.2 < mapHeight
+
+/- Actions used by the symbolic planner.
+
+   These correspond to the seven NesyLink actions at the symbolic level:
+   wait, four movement directions, attack/interact, and shield.
+-/
+inductive Action where
+  | wait
+  | up
+  | down
+  | left
+  | right
+  | attack
+  | shield
+  deriving DecidableEq, Repr
+
+def moveActions : List Action :=
+  [Action.up, Action.down, Action.left, Action.right]
+
+def isMoveAction (a : Action) : Prop :=
+  a ∈ moveActions
+
+/- Cardinal directions for exits and room graph edges. -/
+inductive Dir where
+  | north
+  | south
+  | west
+  | east
+  deriving DecidableEq, Repr
+
+def opposite : Dir → Dir
+  | Dir.north => Dir.south
+  | Dir.south => Dir.north
+  | Dir.west => Dir.east
+  | Dir.east => Dir.west
+
+theorem opposite_involutive (d : Dir) :
+    opposite (opposite d) = d := by
+  cases d <;> rfl
+
+/- Manhattan distance and adjacency.
+
+   Two tiles are adjacent if their Manhattan distance is exactly 1.
+-/
+def manhattan (a b : Position) : Nat :=
+  let dx := if a.1 ≤ b.1 then b.1 - a.1 else a.1 - b.1
+  let dy := if a.2 ≤ b.2 then b.2 - a.2 else a.2 - b.2
+  dx + dy
+
+def adjacent (a b : Position) : Prop :=
+  manhattan a b = 1
+
+/- One-tile symbolic movement.
+
+   Nat subtraction is saturating in Lean, so moving left from x = 0 gives x = 0.
+   This is fine because actual legal movement is later guarded by `inBounds`
+   and `isSafe`.
+-/
+def nextPosition (p : Position) : Action → Position
+  | Action.up => (p.1, p.2 - 1)
+  | Action.down => (p.1, p.2 + 1)
+  | Action.left => (p.1 - 1, p.2)
+  | Action.right => (p.1 + 1, p.2)
+  | _ => p
+
+/- Inventory abstraction.
+
+   We keep this small because the Python policy is allowed to use inventory
+   information such as keys and equipped tools.
+-/
+structure Inventory where
+  keys : Nat
+  gold : Nat
+  hasSword : Bool
+  hasShield : Bool
+  deriving DecidableEq, Repr
+
+def hasKey (inv : Inventory) : Prop :=
+  inv.keys > 0
+
+def noKey (inv : Inventory) : Prop :=
+  inv.keys = 0
+
+/- Symbolic state extracted from pixels.
+
+   This is not the full NesyLink engine state. It is the abstract state used by
+   the symbolic planner after visual extraction.
+
+   `gaps` and `bridges` are included for Task4-style bridge/gap reasoning.
+   If a task does not use them, the task file can simply set them to [].
+-/
+structure SymbolicState where
+  player : Position
+  exits : List Position
+  walls : List Position
+  traps : List Position
+  monsters : List Position
+  chests : List Position
+  buttons : List Position
+  switches : List Position
+  gaps : List Position
+  bridges : List Position
+  health : Nat
+  inventory : Inventory
+  deriving DecidableEq, Repr
+
+/- A tile is passable/safe for movement if it is:
+   - inside the 10 x 8 grid;
+   - not a wall;
+   - not a trap;
+   - not occupied by a monster;
+   - not occupied by a chest;
+   - not an unbridged gap.
+
+   This corresponds to the Python planner's `is_walkable` / `isSafe` layer.
+-/
+def isSafe (s : SymbolicState) (p : Position) : Prop :=
+  inBounds p ∧
+  p ∉ s.walls ∧
+  p ∉ s.traps ∧
+  p ∉ s.monsters ∧
+  p ∉ s.chests ∧
+  (p ∉ s.gaps ∨ p ∈ s.bridges)
+
+/- A basic safe state: the player is currently not out of bounds,
+   not in a wall, and not on a trap.
+
+   We keep this weaker than `isSafe s s.player`, because in the real game the
+   player may stand next to chests/monsters or on exits/buttons.
+-/
+def SafeState (s : SymbolicState) : Prop :=
+  inBounds s.player ∧
+  s.player ∉ s.walls ∧
+  s.player ∉ s.traps
+
+/- Small reusable lemmas about `isSafe`.
+
+   These are useful in Planner.lean and task-specific proofs.
+-/
+theorem isSafe_inBounds
+    {s : SymbolicState} {p : Position}
+    (h : isSafe s p) :
+    inBounds p := by
+  exact h.1
+
+theorem isSafe_not_wall
+    {s : SymbolicState} {p : Position}
+    (h : isSafe s p) :
+    p ∉ s.walls := by
+  exact h.2.1
+
+theorem isSafe_not_trap
+    {s : SymbolicState} {p : Position}
+    (h : isSafe s p) :
+    p ∉ s.traps := by
+  exact h.2.2.1
+
+theorem isSafe_not_monster
+    {s : SymbolicState} {p : Position}
+    (h : isSafe s p) :
+    p ∉ s.monsters := by
+  exact h.2.2.2.1
+
+theorem isSafe_not_chest
+    {s : SymbolicState} {p : Position}
+    (h : isSafe s p) :
+    p ∉ s.chests := by
+  exact h.2.2.2.2.1
+
+theorem isSafe_gap_or_bridge
+    {s : SymbolicState} {p : Position}
+    (h : isSafe s p) :
+    p ∉ s.gaps ∨ p ∈ s.bridges := by
+  exact h.2.2.2.2.2
+
+/- If the player is at a safe tile, then the symbolic state is a SafeState. -/
+theorem safe_player_implies_safe_state
+    {s : SymbolicState}
+    (h : isSafe s s.player) :
+    SafeState s := by
+  exact ⟨isSafe_inBounds h, isSafe_not_wall h, isSafe_not_trap h⟩
+
+/-!
+  Shared planner-level formalization.
+
+  This file proves task-independent properties of the symbolic path planner.
+
+  It corresponds to the Python layer where the agent:
+  1. builds a symbolic Scene from pixels;
+  2. computes a BFS/path over tile positions;
+  3. moves along the path only if every next tile is safe.
+
+  This file does not formalize raw-pixel extraction and does not formalize
+  task-specific goals such as "open all chests" or "rotate bridge twice".
+  Those belong in Task1.lean ... Task5.lean.
+-/
+
+/- A path starts at a given position. -/
+def StartsAt (start : Position) : List Position → Prop
+  | [] => False
+  | p :: _ => p = start
+
+/- A path ends at a given position. -/
+def EndsAt (goal : Position) : List Position → Prop
+  | [] => False
+  | [p] => p = goal
+  | _ :: rest => EndsAt goal rest
+
+/- A path ends in one of a list of goal positions. -/
+def EndsIn (goals : List Position) : List Position → Prop
+  | [] => False
+  | [p] => p ∈ goals
+  | _ :: rest => EndsIn goals rest
+
+/- A valid path is a tile-level path where every consecutive pair is adjacent
+   and every next tile is safe.
+
+   The first tile is not required to satisfy `isSafe`, because it is the current
+   player position. In the actual environment, the player may stand on an exit,
+   button, or other special tile. What matters for planning is that every move
+   goes to a safe next tile.
+-/
+def ValidPath (s : SymbolicState) : List Position → Prop
+  | [] => True
+  | [_] => True
+  | p :: q :: rest =>
+      adjacent p q ∧ isSafe s q ∧ ValidPath s (q :: rest)
+
+/- A sound path plan from a start position to a list of goal positions. -/
+structure PathPlanSound
+    (s : SymbolicState)
+    (start : Position)
+    (goals : List Position)
+    (path : List Position) : Prop where
+  starts : StartsAt start path
+  valid : ValidPath s path
+  reaches : EndsIn goals path
+
+/- Basic projections from a sound path plan. -/
+theorem sound_plan_starts
+    {s : SymbolicState} {start : Position} {goals path : List Position}
+    (h : PathPlanSound s start goals path) :
+    StartsAt start path := by
+  exact h.starts
+
+theorem sound_plan_valid
+    {s : SymbolicState} {start : Position} {goals path : List Position}
+    (h : PathPlanSound s start goals path) :
+    ValidPath s path := by
+  exact h.valid
+
+theorem sound_plan_reaches
+    {s : SymbolicState} {start : Position} {goals path : List Position}
+    (h : PathPlanSound s start goals path) :
+    EndsIn goals path := by
+  exact h.reaches
+
+/- If a path has at least two positions and is valid, then the first movement
+   step goes to an adjacent tile. -/
+theorem validPath_next_adjacent
+    {s : SymbolicState} {p q : Position} {rest : List Position}
+    (h : ValidPath s (p :: q :: rest)) :
+    adjacent p q := by
+  simp [ValidPath] at h
+  exact h.1
+
+/- If a path has at least two positions and is valid, then the first next tile
+   is safe. -/
+theorem validPath_next_safe
+    {s : SymbolicState} {p q : Position} {rest : List Position}
+    (h : ValidPath s (p :: q :: rest)) :
+    isSafe s q := by
+  simp [ValidPath] at h
+  exact h.2.1
+
+/- The tail of a valid path is also a valid path. -/
+theorem validPath_tail
+    {s : SymbolicState} {p q : Position} {rest : List Position}
+    (h : ValidPath s (p :: q :: rest)) :
+    ValidPath s (q :: rest) := by
+  simp [ValidPath] at h
+  exact h.2.2
+
+/- Safety consequences for the next step of a valid path. -/
+theorem validPath_next_inBounds
+    {s : SymbolicState} {p q : Position} {rest : List Position}
+    (h : ValidPath s (p :: q :: rest)) :
+    inBounds q := by
+  exact isSafe_inBounds (validPath_next_safe h)
+
+theorem validPath_next_not_wall
+    {s : SymbolicState} {p q : Position} {rest : List Position}
+    (h : ValidPath s (p :: q :: rest)) :
+    q ∉ s.walls := by
+  exact isSafe_not_wall (validPath_next_safe h)
+
+theorem validPath_next_not_trap
+    {s : SymbolicState} {p q : Position} {rest : List Position}
+    (h : ValidPath s (p :: q :: rest)) :
+    q ∉ s.traps := by
+  exact isSafe_not_trap (validPath_next_safe h)
+
+theorem validPath_next_not_monster
+    {s : SymbolicState} {p q : Position} {rest : List Position}
+    (h : ValidPath s (p :: q :: rest)) :
+    q ∉ s.monsters := by
+  exact isSafe_not_monster (validPath_next_safe h)
+
+theorem validPath_next_not_chest
+    {s : SymbolicState} {p q : Position} {rest : List Position}
+    (h : ValidPath s (p :: q :: rest)) :
+    q ∉ s.chests := by
+  exact isSafe_not_chest (validPath_next_safe h)
+
+theorem validPath_next_gap_or_bridge
+    {s : SymbolicState} {p q : Position} {rest : List Position}
+    (h : ValidPath s (p :: q :: rest)) :
+    q ∉ s.gaps ∨ q ∈ s.bridges := by
+  exact isSafe_gap_or_bridge (validPath_next_safe h)
+
+/- A path is safe if it satisfies ValidPath.
+
+   This theorem is intentionally simple: it gives a named safety theorem that
+   can be cited in the report.
+-/
+def SafePath (s : SymbolicState) (path : List Position) : Prop :=
+  ValidPath s path
+
+theorem validPath_is_safePath
+    {s : SymbolicState} {path : List Position}
+    (h : ValidPath s path) :
+    SafePath s path := by
+  exact h
+
+/- Soundness theorem for a planner result.
+
+   If a path plan is sound, then the movement path used by the planner is safe.
+   This is the theorem that corresponds most directly to the Python BFS layer:
+   BFS may be implemented in Python, but Lean proves what must be true of any
+   accepted BFS result.
+-/
+theorem sound_plan_is_safe
+    {s : SymbolicState} {start : Position} {goals path : List Position}
+    (h : PathPlanSound s start goals path) :
+    SafePath s path := by
+  exact validPath_is_safePath h.valid
+
+/- If a sound plan has at least one movement step, that next step is safe. -/
+theorem sound_plan_next_safe
+    {s : SymbolicState} {start p q : Position}
+    {goals : List Position} {rest : List Position}
+    (h : PathPlanSound s start goals (p :: q :: rest)) :
+    isSafe s q := by
+  exact validPath_next_safe h.valid
+
+/- If a sound plan has at least one movement step, that next step is adjacent. -/
+theorem sound_plan_next_adjacent
+    {s : SymbolicState} {start p q : Position}
+    {goals : List Position} {rest : List Position}
+    (h : PathPlanSound s start goals (p :: q :: rest)) :
+    adjacent p q := by
+  exact validPath_next_adjacent h.valid
+
+/- If a sound plan has at least one movement step, that next step is not a trap. -/
+theorem sound_plan_next_not_trap
+    {s : SymbolicState} {start p q : Position}
+    {goals : List Position} {rest : List Position}
+    (h : PathPlanSound s start goals (p :: q :: rest)) :
+    q ∉ s.traps := by
+  exact validPath_next_not_trap h.valid
+
+/- If a sound plan has at least one movement step, that next step is not a wall. -/
+theorem sound_plan_next_not_wall
+    {s : SymbolicState} {start p q : Position}
+    {goals : List Position} {rest : List Position}
+    (h : PathPlanSound s start goals (p :: q :: rest)) :
+    q ∉ s.walls := by
+  exact validPath_next_not_wall h.valid
+
+/- If a sound plan has at least one movement step, that next step is inside the map. -/
+theorem sound_plan_next_inBounds
+    {s : SymbolicState} {start p q : Position}
+    {goals : List Position} {rest : List Position}
+    (h : PathPlanSound s start goals (p :: q :: rest)) :
+    inBounds q := by
+  exact validPath_next_inBounds h.valid
+
+namespace Task1
+
+end Task1
+
+namespace Task2
+
+end Task2
+
+namespace Task3
+
+end Task3
+
+namespace Task4
+
+end Task4
+
+namespace Task5
+
+end Task5
+
+
+end NesyLinkFormalization
