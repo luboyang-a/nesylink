@@ -208,6 +208,171 @@ theorem safe_player_implies_safe_state
   exact ⟨isSafe_inBounds h, isSafe_not_wall h, isSafe_not_trap h⟩
 
 /-!
+  Shared symbolic environment semantics.
+
+  The Python engine is pixel-based, but the submitted planner reasons over
+  extracted tile positions.  The following definitions model the verifiable
+  tile-level layer:
+
+  * safe movement goes to the next tile;
+  * blocked movement leaves the player in place;
+  * opening a key chest removes the chest and increases the key count;
+  * attacking a reachable monster removes it in this abstract combat model;
+  * using an exit moves the player to the target spawn when requirements hold.
+
+  Monster hit points, knockback, animation ticks, and raw-pixel extraction are
+  intentionally outside this layer.  They should be discussed as abstraction
+  boundaries in the report.
+-/
+
+def actionForDir : Dir → Action
+  | Dir.north => Action.up
+  | Dir.south => Action.down
+  | Dir.west => Action.left
+  | Dir.east => Action.right
+
+structure ExitRule where
+  pos : Position
+  direction : Dir
+  target : Position
+  requiredKeys : Nat := 0
+  requiresSword : Bool := false
+  requiresAllMonstersDefeated : Bool := false
+  completeTask : Bool := false
+  deriving DecidableEq, Repr
+
+def canUseExit (s : SymbolicState) (e : ExitRule) : Prop :=
+  e.pos ∈ s.exits ∧
+  s.player = e.pos ∧
+  e.requiredKeys ≤ s.inventory.keys ∧
+  (e.requiresSword = true → s.inventory.hasSword = true) ∧
+  (e.requiresAllMonstersDefeated = true → s.monsters = [])
+
+def canOpenChest (s : SymbolicState) (c : Position) : Prop :=
+  c ∈ s.chests ∧ adjacent s.player c
+
+def canAttack (s : SymbolicState) (m : Position) : Prop :=
+  m ∈ s.monsters ∧ adjacent s.player m ∧ s.inventory.hasSword = true
+
+theorem canUseExit_has_required_keys
+    {s : SymbolicState} {e : ExitRule}
+    (h : canUseExit s e) :
+    e.requiredKeys ≤ s.inventory.keys := by
+  exact h.2.2.1
+
+theorem canOpenChest_chest_mem
+    {s : SymbolicState} {c : Position}
+    (h : canOpenChest s c) :
+    c ∈ s.chests := by
+  exact h.1
+
+theorem canOpenChest_adjacent
+    {s : SymbolicState} {c : Position}
+    (h : canOpenChest s c) :
+    adjacent s.player c := by
+  exact h.2
+
+theorem canAttack_monster_mem
+    {s : SymbolicState} {m : Position}
+    (h : canAttack s m) :
+    m ∈ s.monsters := by
+  exact h.1
+
+theorem canAttack_hasSword
+    {s : SymbolicState} {m : Position}
+    (h : canAttack s m) :
+    s.inventory.hasSword = true := by
+  exact h.2.2
+
+inductive Step : SymbolicState → Action → SymbolicState → Prop where
+  | moveSafe
+      {s : SymbolicState} {a : Action} :
+      a ∈ moveActions →
+      isSafe s (nextPosition s.player a) →
+      Step s a { s with player := nextPosition s.player a }
+  | moveBlocked
+      {s : SymbolicState} {a : Action} :
+      a ∈ moveActions →
+      ¬ isSafe s (nextPosition s.player a) →
+      Step s a s
+  | openKeyChest
+      {s : SymbolicState} {c : Position} :
+      canOpenChest s c →
+      Step s Action.attack
+        { s with
+          chests := s.chests.erase c,
+          inventory := { s.inventory with keys := s.inventory.keys + 1 } }
+  | attackMonster
+      {s : SymbolicState} {m : Position} :
+      canAttack s m →
+      Step s Action.attack { s with monsters := s.monsters.erase m }
+  | useExit
+      {s : SymbolicState} {e : ExitRule} :
+      canUseExit s e →
+      Step s (actionForDir e.direction) { s with player := e.target }
+  | wait
+      {s : SymbolicState} :
+      Step s Action.wait s
+  | shield
+      {s : SymbolicState} :
+      Step s Action.shield s
+
+inductive Exec : SymbolicState → List Action → SymbolicState → Prop where
+  | nil {s : SymbolicState} :
+      Exec s [] s
+  | cons {s t u : SymbolicState} {a : Action} {rest : List Action} :
+      Step s a t →
+      Exec t rest u →
+      Exec s (a :: rest) u
+
+theorem safe_move_result_safe_state
+    {s : SymbolicState} {a : Action}
+    (_ha : a ∈ moveActions)
+    (hsafe : isSafe s (nextPosition s.player a)) :
+    SafeState { s with player := nextPosition s.player a } := by
+  exact ⟨isSafe_inBounds hsafe, isSafe_not_wall hsafe, isSafe_not_trap hsafe⟩
+
+theorem open_key_chest_increases_keys
+    {s : SymbolicState} {c : Position}
+    (_h : canOpenChest s c) :
+    ({ s with
+      chests := s.chests.erase c,
+      inventory := { s.inventory with keys := s.inventory.keys + 1 } }).inventory.keys
+      = s.inventory.keys + 1 := by
+  rfl
+
+theorem attack_monster_removes_monster
+    {s : SymbolicState} {m : Position}
+    (_h : canAttack s m) :
+    ({ s with monsters := s.monsters.erase m }).monsters = s.monsters.erase m := by
+  rfl
+
+theorem use_exit_moves_to_target
+    {s : SymbolicState} {e : ExitRule}
+    (_h : canUseExit s e) :
+    ({ s with player := e.target }).player = e.target := by
+  rfl
+
+theorem exec_cons_inv
+    {s u : SymbolicState} {a : Action} {rest : List Action}
+    (h : Exec s (a :: rest) u) :
+    ∃ t, Step s a t ∧ Exec t rest u := by
+  cases h with
+  | cons hstep hexec =>
+      exact ⟨_, hstep, hexec⟩
+
+theorem exec_append
+    {s t u : SymbolicState} {p q : List Action}
+    (hp : Exec s p t)
+    (hq : Exec t q u) :
+    Exec s (p ++ q) u := by
+  induction hp with
+  | nil =>
+      exact hq
+  | cons hstep hexec ih =>
+      exact Exec.cons hstep (ih hq)
+
+/-!
   Shared planner-level formalization.
 
   This file proves task-independent properties of the symbolic path planner.
