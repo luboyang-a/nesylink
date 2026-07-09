@@ -1,0 +1,834 @@
+{
+  "episodes": [
+    {
+      "eval_stage": "original",
+      "event_counts": {
+        "action_attack": 9,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 0,
+      "steps": 554,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 167.9600000000005,
+      "truncated": false
+    },
+    {
+      "eval_stage": "original",
+      "event_counts": {
+        "action_attack": 9,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 1,
+      "steps": 554,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 167.9600000000005,
+      "truncated": false
+    },
+    {
+      "eval_stage": "original",
+      "event_counts": {
+        "action_attack": 9,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 2,
+      "steps": 554,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 167.9600000000005,
+      "truncated": false
+    },
+    {
+      "eval_stage": "original",
+      "event_counts": {
+        "action_attack": 9,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 3,
+      "steps": 554,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 167.9600000000005,
+      "truncated": false
+    },
+    {
+      "eval_stage": "original",
+      "event_counts": {
+        "action_attack": 9,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 4,
+      "steps": 554,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 167.9600000000005,
+      "truncated": false
+    },
+    {
+      "eval_stage": "original",
+      "event_counts": {
+        "action_attack": 9,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 5,
+      "steps": 554,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 167.9600000000005,
+      "truncated": false
+    },
+    {
+      "eval_stage": "original",
+      "event_counts": {
+        "action_attack": 9,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 6,
+      "steps": 554,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 167.9600000000005,
+      "truncated": false
+    },
+    {
+      "eval_stage": "original",
+      "event_counts": {
+        "action_attack": 9,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 7,
+      "steps": 554,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 167.9600000000005,
+      "truncated": false
+    },
+    {
+      "eval_stage": "original",
+      "event_counts": {
+        "action_attack": 9,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 8,
+      "steps": 554,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 167.9600000000005,
+      "truncated": false
+    },
+    {
+      "eval_stage": "original",
+      "event_counts": {
+        "action_attack": 9,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 9,
+      "steps": 554,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 167.9600000000005,
+      "truncated": false
+    },
+    {
+      "eval_stage": "spatial",
+      "event_counts": {
+        "action_attack": 66,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 32,
+        "move_left": 256,
+        "move_right": 320,
+        "move_up": 32,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "spatial_a",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 0,
+      "steps": 707,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 194.92999999999918,
+      "truncated": false
+    },
+    {
+      "eval_stage": "spatial",
+      "event_counts": {
+        "action_attack": 4,
+        "action_blocked": 1,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 50,
+        "move_left": 192,
+        "move_right": 288,
+        "move_up": 32,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "spatial_b",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 1,
+      "steps": 568,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 165.27000000000044,
+      "truncated": false
+    },
+    {
+      "eval_stage": "spatial",
+      "event_counts": {
+        "action_attack": 66,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 48,
+        "move_left": 288,
+        "move_right": 336,
+        "move_up": 16,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "spatial_c",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 2,
+      "steps": 755,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 194.44999999999928,
+      "truncated": false
+    },
+    {
+      "eval_stage": "spatial",
+      "event_counts": {
+        "action_attack": 66,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 32,
+        "move_left": 256,
+        "move_right": 320,
+        "move_up": 32,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "spatial_a",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 3,
+      "steps": 707,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 194.92999999999918,
+      "truncated": false
+    },
+    {
+      "eval_stage": "spatial",
+      "event_counts": {
+        "action_attack": 4,
+        "action_blocked": 1,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 7,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 41,
+        "move_left": 208,
+        "move_right": 304,
+        "move_up": 32,
+        "room_changed": 7,
+        "world_completed": 1
+      },
+      "map_variant": "spatial_b",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 4,
+      "steps": 591,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 183.03999999999948,
+      "truncated": false
+    },
+    {
+      "eval_stage": "spatial",
+      "event_counts": {
+        "action_attack": 6,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 48,
+        "move_left": 288,
+        "move_right": 336,
+        "move_up": 16,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "spatial_c",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "default",
+      "seed": 5,
+      "steps": 695,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 165.05000000000024,
+      "truncated": false
+    },
+    {
+      "eval_stage": "color",
+      "event_counts": {
+        "action_attack": 29,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 55,
+        "move_left": 221,
+        "move_right": 301,
+        "move_up": 17,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "grayscale",
+      "seed": 0,
+      "steps": 624,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 177.26000000000056,
+      "truncated": false
+    },
+    {
+      "eval_stage": "color",
+      "event_counts": {
+        "action_attack": 9,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "dark",
+      "seed": 1,
+      "steps": 554,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 167.9600000000005,
+      "truncated": false
+    },
+    {
+      "eval_stage": "redraw",
+      "event_counts": {
+        "action_attack": 12,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "redraw_geometric",
+      "seed": 2,
+      "steps": 557,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 169.43000000000038,
+      "truncated": false
+    },
+    {
+      "eval_stage": "redraw",
+      "event_counts": {
+        "action_attack": 6,
+        "chest_opened": 1,
+        "door_opened": 1,
+        "environment_completed": 1,
+        "exit_reached": 5,
+        "key_collected": 1,
+        "monster_damaged": 1,
+        "monster_killed": 1,
+        "move_down": 16,
+        "move_left": 224,
+        "move_right": 304,
+        "room_changed": 5,
+        "world_completed": 1
+      },
+      "map_variant": "default",
+      "milestones": {
+        "key_collected": true,
+        "monster_killed": true
+      },
+      "obs_variant": "redraw_symbols",
+      "seed": 3,
+      "steps": 551,
+      "success": true,
+      "task_id": "mathematical_logic/task_3",
+      "terminal_reason": "world_completed",
+      "terminated": true,
+      "total_reward": 166.49000000000058,
+      "truncated": false
+    }
+  ],
+  "summary": {
+    "mathematical_logic/task_3 [color]": {
+      "avg_reward": 172.61000000000053,
+      "avg_steps": 589.0,
+      "episodes": 2,
+      "eval_stage": "color",
+      "event_totals": {
+        "action_attack": 38,
+        "chest_opened": 2,
+        "door_opened": 2,
+        "environment_completed": 2,
+        "exit_reached": 10,
+        "key_collected": 2,
+        "monster_damaged": 2,
+        "monster_killed": 2,
+        "move_down": 71,
+        "move_left": 445,
+        "move_right": 605,
+        "move_up": 17,
+        "room_changed": 10,
+        "world_completed": 2
+      },
+      "map_variant_counts": {
+        "default": 2
+      },
+      "milestone_rates": {
+        "key_collected": 1.0,
+        "monster_killed": 1.0
+      },
+      "obs_variant_counts": {
+        "dark": 1,
+        "grayscale": 1
+      },
+      "progress_rates": {
+        "chest_opened": 1.0,
+        "door_opened": 1.0,
+        "environment_completed": 1.0,
+        "exit_reached": 1.0,
+        "key_collected": 1.0,
+        "monster_killed": 1.0,
+        "room_changed": 1.0,
+        "world_completed": 1.0
+      },
+      "success_rate": 1.0,
+      "task_id": "mathematical_logic/task_3"
+    },
+    "mathematical_logic/task_3 [original]": {
+      "avg_reward": 167.9600000000005,
+      "avg_steps": 554.0,
+      "episodes": 10,
+      "eval_stage": "original",
+      "event_totals": {
+        "action_attack": 90,
+        "chest_opened": 10,
+        "door_opened": 10,
+        "environment_completed": 10,
+        "exit_reached": 50,
+        "key_collected": 10,
+        "monster_damaged": 10,
+        "monster_killed": 10,
+        "move_down": 160,
+        "move_left": 2240,
+        "move_right": 3040,
+        "room_changed": 50,
+        "world_completed": 10
+      },
+      "map_variant_counts": {
+        "default": 10
+      },
+      "milestone_rates": {
+        "key_collected": 1.0,
+        "monster_killed": 1.0
+      },
+      "obs_variant_counts": {
+        "default": 10
+      },
+      "progress_rates": {
+        "chest_opened": 1.0,
+        "door_opened": 1.0,
+        "environment_completed": 1.0,
+        "exit_reached": 1.0,
+        "key_collected": 1.0,
+        "monster_killed": 1.0,
+        "room_changed": 1.0,
+        "world_completed": 1.0
+      },
+      "success_rate": 1.0,
+      "task_id": "mathematical_logic/task_3"
+    },
+    "mathematical_logic/task_3 [redraw]": {
+      "avg_reward": 167.9600000000005,
+      "avg_steps": 554.0,
+      "episodes": 2,
+      "eval_stage": "redraw",
+      "event_totals": {
+        "action_attack": 18,
+        "chest_opened": 2,
+        "door_opened": 2,
+        "environment_completed": 2,
+        "exit_reached": 10,
+        "key_collected": 2,
+        "monster_damaged": 2,
+        "monster_killed": 2,
+        "move_down": 32,
+        "move_left": 448,
+        "move_right": 608,
+        "room_changed": 10,
+        "world_completed": 2
+      },
+      "map_variant_counts": {
+        "default": 2
+      },
+      "milestone_rates": {
+        "key_collected": 1.0,
+        "monster_killed": 1.0
+      },
+      "obs_variant_counts": {
+        "redraw_geometric": 1,
+        "redraw_symbols": 1
+      },
+      "progress_rates": {
+        "chest_opened": 1.0,
+        "door_opened": 1.0,
+        "environment_completed": 1.0,
+        "exit_reached": 1.0,
+        "key_collected": 1.0,
+        "monster_killed": 1.0,
+        "room_changed": 1.0,
+        "world_completed": 1.0
+      },
+      "success_rate": 1.0,
+      "task_id": "mathematical_logic/task_3"
+    },
+    "mathematical_logic/task_3 [spatial]": {
+      "avg_reward": 182.94499999999962,
+      "avg_steps": 670.5,
+      "episodes": 6,
+      "eval_stage": "spatial",
+      "event_totals": {
+        "action_attack": 212,
+        "action_blocked": 2,
+        "chest_opened": 6,
+        "door_opened": 6,
+        "environment_completed": 6,
+        "exit_reached": 32,
+        "key_collected": 6,
+        "monster_damaged": 6,
+        "monster_killed": 6,
+        "move_down": 251,
+        "move_left": 1488,
+        "move_right": 1904,
+        "move_up": 160,
+        "room_changed": 32,
+        "world_completed": 6
+      },
+      "map_variant_counts": {
+        "spatial_a": 2,
+        "spatial_b": 2,
+        "spatial_c": 2
+      },
+      "milestone_rates": {
+        "key_collected": 1.0,
+        "monster_killed": 1.0
+      },
+      "obs_variant_counts": {
+        "default": 6
+      },
+      "progress_rates": {
+        "chest_opened": 1.0,
+        "door_opened": 1.0,
+        "environment_completed": 1.0,
+        "exit_reached": 1.0,
+        "key_collected": 1.0,
+        "monster_killed": 1.0,
+        "room_changed": 1.0,
+        "world_completed": 1.0
+      },
+      "success_rate": 1.0,
+      "task_id": "mathematical_logic/task_3"
+    }
+  }
+}
