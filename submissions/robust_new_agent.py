@@ -1096,6 +1096,11 @@ class Policy:
         frame = np.asarray(obs)
         self.visual_mode = _visual_mode(frame)
         scene = extract_scene(obs, self.previous_player)
+        if isinstance(info, dict):
+            task_id_from_info = info.get("task_id")
+            if isinstance(task_id_from_info, str) and task_id_from_info:
+                self.task_id = task_id_from_info
+
 
         if scene.player == self.previous_player and self.last_action in MOVE_ACTIONS:
             self.stationary_steps += 1
