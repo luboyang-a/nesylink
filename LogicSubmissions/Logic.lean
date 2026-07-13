@@ -1,23 +1,24 @@
 namespace NesyLinkFormalization
 
 /-!
-  Basic shared definitions for the NesyLink mathematical-logic project.
+  Symbolic formalization for the NesyLink mathematical-logic project.
 
-  This file is intentionally task-independent.
+  This file formalizes the symbolic layer used by the submitted search-based
+  agent.  The Python agent first extracts a symbolic Scene from pixels, then
+  performs target selection and BFS-style path planning over tile positions.
 
-  It contains only the common symbolic vocabulary used by all task proofs:
-  positions, actions, directions, map bounds, symbolic state, safety predicate,
-  and a few small lemmas.
+  This Lean file does not prove raw-pixel recognition correct.  Instead, it
+  proves properties of the symbolic planner after visual extraction:
+  positions, actions, safety, executable action sequences, valid paths, legal
+  actions, and abstract task-level compositions.
 
-  Task-specific concepts such as Task1Goal, BridgeState, RoomMemory, or
-  concrete task maps should be defined in separate files.
+  Concrete task maps are intentionally not encoded.  Task-level theorems are
+  stated over generic executable stages, matching the way the Python policy
+  composes search stages such as "go to chest", "open chest", "go to exit",
+  "use exit", "press button", or "toggle switch".
 -/
 
-/- Basic grid position.
-
-   NesyLink maps use a 10 x 8 tile grid.
-   A position is represented as (x, y), where x is the column and y is the row.
--/
+/- Basic grid position. NesyLink maps use a 10 x 8 tile grid. -/
 abbrev Position := Nat × Nat
 
 def mapWidth : Nat := 10
@@ -28,8 +29,8 @@ def inBounds (p : Position) : Prop :=
 
 /- Actions used by the symbolic planner.
 
-   These correspond to the seven NesyLink actions at the symbolic level:
-   wait, four movement directions, attack/interact, and shield.
+   These correspond to the official seven-action interface:
+   wait, four movement directions, interact/attack, and shield.
 -/
 inductive Action where
   | wait
@@ -46,6 +47,31 @@ def moveActions : List Action :=
 
 def isMoveAction (a : Action) : Prop :=
   a ∈ moveActions
+
+/- Legal action predicate.
+
+   Since Action is an inductive type with exactly seven constructors, every
+   value of type Action is legal.  This corresponds to the fact that the Python
+   policy only outputs action IDs in the official action space 0..6.
+-/
+def LegalAction (a : Action) : Prop :=
+  a = Action.wait ∨
+  a = Action.up ∨
+  a = Action.down ∨
+  a = Action.left ∨
+  a = Action.right ∨
+  a = Action.attack ∨
+  a = Action.shield
+
+def LegalPlan (plan : List Action) : Prop :=
+  ∀ a, a ∈ plan → LegalAction a
+
+theorem every_action_legal (a : Action) : LegalAction a := by
+  cases a <;> simp [LegalAction]
+
+theorem every_plan_legal (plan : List Action) : LegalPlan plan := by
+  intro a _ha
+  exact every_action_legal a
 
 /- Cardinal directions for exits and room graph edges. -/
 inductive Dir where
@@ -65,10 +91,7 @@ theorem opposite_involutive (d : Dir) :
     opposite (opposite d) = d := by
   cases d <;> rfl
 
-/- Manhattan distance and adjacency.
-
-   Two tiles are adjacent if their Manhattan distance is exactly 1.
--/
+/- Manhattan distance and adjacency. -/
 def manhattan (a b : Position) : Nat :=
   let dx := if a.1 ≤ b.1 then b.1 - a.1 else a.1 - b.1
   let dy := if a.2 ≤ b.2 then b.2 - a.2 else a.2 - b.2
@@ -80,8 +103,7 @@ def adjacent (a b : Position) : Prop :=
 /- One-tile symbolic movement.
 
    Nat subtraction is saturating in Lean, so moving left from x = 0 gives x = 0.
-   This is fine because actual legal movement is later guarded by `inBounds`
-   and `isSafe`.
+   Legal movement is guarded by isSafe.
 -/
 def nextPosition (p : Position) : Action → Position
   | Action.up => (p.1, p.2 - 1)
@@ -92,8 +114,9 @@ def nextPosition (p : Position) : Action → Position
 
 /- Inventory abstraction.
 
-   We keep this small because the Python policy is allowed to use inventory
-   information such as keys and equipped tools.
+   This matches the safe information used by the Python agent: keys, gold, and
+   equipped tools such as sword/shield.  Hidden health is intentionally not
+   modeled here, because the submitted safe policy does not read agent hp.
 -/
 structure Inventory where
   keys : Nat
@@ -110,11 +133,12 @@ def noKey (inv : Inventory) : Prop :=
 
 /- Symbolic state extracted from pixels.
 
-   This is not the full NesyLink engine state. It is the abstract state used by
-   the symbolic planner after visual extraction.
+   This is not the full engine state.  It is the planner-level state after
+   visual extraction.
 
-   `gaps` and `bridges` are included for Task4-style bridge/gap reasoning.
-   If a task does not use them, the task file can simply set them to [].
+   buttons and switches are included because Task4/Task5 require them.
+   npcs are included because the Python walkability layer may treat non-player
+   occupants as blocked tiles.
 -/
 structure SymbolicState where
   player : Position
@@ -125,21 +149,24 @@ structure SymbolicState where
   chests : List Position
   buttons : List Position
   switches : List Position
+  npcs : List Position
   gaps : List Position
   bridges : List Position
-  health : Nat
+  pressedButtons : List Position
+  switchCount : Nat
   inventory : Inventory
   deriving DecidableEq, Repr
 
-/- A tile is passable/safe for movement if it is:
-   - inside the 10 x 8 grid;
+/- A tile is safe/passable for movement if it is:
+   - inside the grid;
    - not a wall;
    - not a trap;
    - not occupied by a monster;
    - not occupied by a chest;
+   - not occupied by an NPC;
    - not an unbridged gap.
 
-   This corresponds to the Python planner's `is_walkable` / `isSafe` layer.
+   Exits, buttons, and switches are intentionally not blocked.
 -/
 def isSafe (s : SymbolicState) (p : Position) : Prop :=
   inBounds p ∧
@@ -147,23 +174,15 @@ def isSafe (s : SymbolicState) (p : Position) : Prop :=
   p ∉ s.traps ∧
   p ∉ s.monsters ∧
   p ∉ s.chests ∧
+  p ∉ s.npcs ∧
   (p ∉ s.gaps ∨ p ∈ s.bridges)
 
-/- A basic safe state: the player is currently not out of bounds,
-   not in a wall, and not on a trap.
-
-   We keep this weaker than `isSafe s s.player`, because in the real game the
-   player may stand next to chests/monsters or on exits/buttons.
--/
+/- A basic safe state for the current player position. -/
 def SafeState (s : SymbolicState) : Prop :=
   inBounds s.player ∧
   s.player ∉ s.walls ∧
   s.player ∉ s.traps
 
-/- Small reusable lemmas about `isSafe`.
-
-   These are useful in Planner.lean and task-specific proofs.
--/
 theorem isSafe_inBounds
     {s : SymbolicState} {p : Position}
     (h : isSafe s p) :
@@ -194,43 +213,32 @@ theorem isSafe_not_chest
     p ∉ s.chests := by
   exact h.2.2.2.2.1
 
+theorem isSafe_not_npc
+    {s : SymbolicState} {p : Position}
+    (h : isSafe s p) :
+    p ∉ s.npcs := by
+  exact h.2.2.2.2.2.1
+
 theorem isSafe_gap_or_bridge
     {s : SymbolicState} {p : Position}
     (h : isSafe s p) :
     p ∉ s.gaps ∨ p ∈ s.bridges := by
-  exact h.2.2.2.2.2
+  exact h.2.2.2.2.2.2
 
-/- If the player is at a safe tile, then the symbolic state is a SafeState. -/
 theorem safe_player_implies_safe_state
     {s : SymbolicState}
     (h : isSafe s s.player) :
     SafeState s := by
   exact ⟨isSafe_inBounds h, isSafe_not_wall h, isSafe_not_trap h⟩
 
-/-!
-  Shared symbolic environment semantics.
-
-  The Python engine is pixel-based, but the submitted planner reasons over
-  extracted tile positions.  The following definitions model the verifiable
-  tile-level layer:
-
-  * safe movement goes to the next tile;
-  * blocked movement leaves the player in place;
-  * opening a key chest removes the chest and increases the key count;
-  * attacking a reachable monster removes it in this abstract combat model;
-  * using an exit moves the player to the target spawn when requirements hold.
-
-  Monster hit points, knockback, animation ticks, and raw-pixel extraction are
-  intentionally outside this layer.  They should be discussed as abstraction
-  boundaries in the report.
--/
-
+/- Direction to movement action. -/
 def actionForDir : Dir → Action
   | Dir.north => Action.up
   | Dir.south => Action.down
   | Dir.west => Action.left
   | Dir.east => Action.right
 
+/- Abstract exit rule. -/
 structure ExitRule where
   pos : Position
   direction : Dir
@@ -254,11 +262,31 @@ def canOpenChest (s : SymbolicState) (c : Position) : Prop :=
 def canAttack (s : SymbolicState) (m : Position) : Prop :=
   m ∈ s.monsters ∧ adjacent s.player m ∧ s.inventory.hasSword = true
 
+def canPressButton (s : SymbolicState) (b : Position) : Prop :=
+  b ∈ s.buttons ∧ adjacent s.player b
+
+def canToggleSwitch (s : SymbolicState) (sw : Position) : Prop :=
+  sw ∈ s.switches ∧ adjacent s.player sw
+
 theorem canUseExit_has_required_keys
     {s : SymbolicState} {e : ExitRule}
     (h : canUseExit s e) :
     e.requiredKeys ≤ s.inventory.keys := by
   exact h.2.2.1
+
+theorem canUseExit_requires_sword
+    {s : SymbolicState} {e : ExitRule}
+    (h : canUseExit s e)
+    (hs : e.requiresSword = true) :
+    s.inventory.hasSword = true := by
+  exact h.2.2.2.1 hs
+
+theorem canUseExit_requires_monsters_defeated
+    {s : SymbolicState} {e : ExitRule}
+    (h : canUseExit s e)
+    (hm : e.requiresAllMonstersDefeated = true) :
+    s.monsters = [] := by
+  exact h.2.2.2.2 hm
 
 theorem canOpenChest_chest_mem
     {s : SymbolicState} {c : Position}
@@ -284,6 +312,24 @@ theorem canAttack_hasSword
     s.inventory.hasSword = true := by
   exact h.2.2
 
+theorem canPressButton_button_mem
+    {s : SymbolicState} {b : Position}
+    (h : canPressButton s b) :
+    b ∈ s.buttons := by
+  exact h.1
+
+theorem canToggleSwitch_switch_mem
+    {s : SymbolicState} {sw : Position}
+    (h : canToggleSwitch s sw) :
+    sw ∈ s.switches := by
+  exact h.1
+
+/- Abstract one-step semantics.
+
+   Action.attack is used as the symbolic interaction action.  Depending on the
+   nearby target, it may open a chest, attack a monster, press a button, or
+   toggle a switch.
+-/
 inductive Step : SymbolicState → Action → SymbolicState → Prop where
   | moveSafe
       {s : SymbolicState} {a : Action} :
@@ -305,11 +351,23 @@ inductive Step : SymbolicState → Action → SymbolicState → Prop where
   | attackMonster
       {s : SymbolicState} {m : Position} :
       canAttack s m →
-      Step s Action.attack { s with monsters := s.monsters.erase m }
+      Step s Action.attack
+        { s with monsters := s.monsters.erase m }
+  | pressButton
+      {s : SymbolicState} {b : Position} :
+      canPressButton s b →
+      Step s Action.attack
+        { s with pressedButtons := b :: s.pressedButtons }
+  | toggleSwitch
+      {s : SymbolicState} {sw : Position} :
+      canToggleSwitch s sw →
+      Step s Action.attack
+        { s with switchCount := s.switchCount + 1 }
   | useExit
       {s : SymbolicState} {e : ExitRule} :
       canUseExit s e →
-      Step s (actionForDir e.direction) { s with player := e.target }
+      Step s (actionForDir e.direction)
+        { s with player := e.target }
   | wait
       {s : SymbolicState} :
       Step s Action.wait s
@@ -317,6 +375,7 @@ inductive Step : SymbolicState → Action → SymbolicState → Prop where
       {s : SymbolicState} :
       Step s Action.shield s
 
+/- Multi-step execution. -/
 inductive Exec : SymbolicState → List Action → SymbolicState → Prop where
   | nil {s : SymbolicState} :
       Exec s [] s
@@ -331,27 +390,6 @@ theorem safe_move_result_safe_state
     (hsafe : isSafe s (nextPosition s.player a)) :
     SafeState { s with player := nextPosition s.player a } := by
   exact ⟨isSafe_inBounds hsafe, isSafe_not_wall hsafe, isSafe_not_trap hsafe⟩
-
-theorem open_key_chest_increases_keys
-    {s : SymbolicState} {c : Position}
-    (_h : canOpenChest s c) :
-    ({ s with
-      chests := s.chests.erase c,
-      inventory := { s.inventory with keys := s.inventory.keys + 1 } }).inventory.keys
-      = s.inventory.keys + 1 := by
-  rfl
-
-theorem attack_monster_removes_monster
-    {s : SymbolicState} {m : Position}
-    (_h : canAttack s m) :
-    ({ s with monsters := s.monsters.erase m }).monsters = s.monsters.erase m := by
-  rfl
-
-theorem use_exit_moves_to_target
-    {s : SymbolicState} {e : ExitRule}
-    (_h : canUseExit s e) :
-    ({ s with player := e.target }).player = e.target := by
-  rfl
 
 theorem exec_cons_inv
     {s u : SymbolicState} {a : Action} {rest : List Action}
@@ -372,13 +410,7 @@ theorem exec_append
   | cons hstep hexec ih =>
       exact Exec.cons hstep (ih hq)
 
-/-!
-  Shared task-independent state transformers.
-
-  These definitions name the state updates already used by the Step semantics.
-  They make task-level proofs shorter and clearer.
--/
-
+/- Named state transformers. -/
 def afterOpenChest (s : SymbolicState) (c : Position) : SymbolicState :=
   { s with
     chests := s.chests.erase c,
@@ -387,11 +419,16 @@ def afterOpenChest (s : SymbolicState) (c : Position) : SymbolicState :=
 def afterAttackMonster (s : SymbolicState) (m : Position) : SymbolicState :=
   { s with monsters := s.monsters.erase m }
 
+def afterPressButton (s : SymbolicState) (b : Position) : SymbolicState :=
+  { s with pressedButtons := b :: s.pressedButtons }
+
+def afterToggleSwitch (s : SymbolicState) (_sw : Position) : SymbolicState :=
+  { s with switchCount := s.switchCount + 1 }
+
 def afterUseExit (s : SymbolicState) (e : ExitRule) : SymbolicState :=
   { s with player := e.target }
 
 /- One-step executable actions. -/
-
 theorem exec_open_key_chest
     {s : SymbolicState} {c : Position}
     (h : canOpenChest s c) :
@@ -406,6 +443,20 @@ theorem exec_attack_monster
   unfold afterAttackMonster
   exact Exec.cons (Step.attackMonster h) Exec.nil
 
+theorem exec_press_button
+    {s : SymbolicState} {b : Position}
+    (h : canPressButton s b) :
+    Exec s [Action.attack] (afterPressButton s b) := by
+  unfold afterPressButton
+  exact Exec.cons (Step.pressButton h) Exec.nil
+
+theorem exec_toggle_switch
+    {s : SymbolicState} {sw : Position}
+    (h : canToggleSwitch s sw) :
+    Exec s [Action.attack] (afterToggleSwitch s sw) := by
+  unfold afterToggleSwitch
+  exact Exec.cons (Step.toggleSwitch h) Exec.nil
+
 theorem exec_use_exit
     {s : SymbolicState} {e : ExitRule}
     (h : canUseExit s e) :
@@ -414,7 +465,6 @@ theorem exec_use_exit
   exact Exec.cons (Step.useExit h) Exec.nil
 
 /- State update facts. -/
-
 theorem afterOpenChest_keys
     {s : SymbolicState} {c : Position} :
     (afterOpenChest s c).inventory.keys = s.inventory.keys + 1 := by
@@ -430,58 +480,46 @@ theorem afterAttackMonster_player
     (afterAttackMonster s m).player = s.player := by
   rfl
 
+theorem afterPressButton_contains
+    {s : SymbolicState} {b : Position} :
+    b ∈ (afterPressButton s b).pressedButtons := by
+  unfold afterPressButton
+  simp
+
+theorem afterToggleSwitch_count
+    {s : SymbolicState} {sw : Position} :
+    (afterToggleSwitch s sw).switchCount = s.switchCount + 1 := by
+  rfl
+
 theorem afterUseExit_player
     {s : SymbolicState} {e : ExitRule} :
     (afterUseExit s e).player = e.target := by
   rfl
 
-/-!
-  Shared planner-level formalization.
+/- Planner-level formalization. -/
 
-  This file proves task-independent properties of the symbolic path planner.
-
-  It corresponds to the Python layer where the agent:
-  1. builds a symbolic Scene from pixels;
-  2. computes a BFS/path over tile positions;
-  3. moves along the path only if every next tile is safe.
-
-  This file does not formalize raw-pixel extraction and does not formalize
-  task-specific goals such as "open all chests" or "rotate bridge twice".
-  Those belong in Task1.lean ... Task5.lean.
--/
-
-/- A path starts at a given position. -/
 def StartsAt (start : Position) : List Position → Prop
   | [] => False
   | p :: _ => p = start
 
-/- A path ends at a given position. -/
 def EndsAt (goal : Position) : List Position → Prop
   | [] => False
   | [p] => p = goal
   | _ :: rest => EndsAt goal rest
 
-/- A path ends in one of a list of goal positions. -/
 def EndsIn (goals : List Position) : List Position → Prop
   | [] => False
   | [p] => p ∈ goals
   | _ :: rest => EndsIn goals rest
 
 /- A valid path is a tile-level path where every consecutive pair is adjacent
-   and every next tile is safe.
-
-   The first tile is not required to satisfy `isSafe`, because it is the current
-   player position. In the actual environment, the player may stand on an exit,
-   button, or other special tile. What matters for planning is that every move
-   goes to a safe next tile.
--/
+   and every next tile is safe. -/
 def ValidPath (s : SymbolicState) : List Position → Prop
   | [] => True
   | [_] => True
   | p :: q :: rest =>
       adjacent p q ∧ isSafe s q ∧ ValidPath s (q :: rest)
 
-/- A sound path plan from a start position to a list of goal positions. -/
 structure PathPlanSound
     (s : SymbolicState)
     (start : Position)
@@ -491,7 +529,6 @@ structure PathPlanSound
   valid : ValidPath s path
   reaches : EndsIn goals path
 
-/- Basic projections from a sound path plan. -/
 theorem sound_plan_starts
     {s : SymbolicState} {start : Position} {goals path : List Position}
     (h : PathPlanSound s start goals path) :
@@ -510,8 +547,6 @@ theorem sound_plan_reaches
     EndsIn goals path := by
   exact h.reaches
 
-/- If a path has at least two positions and is valid, then the first movement
-   step goes to an adjacent tile. -/
 theorem validPath_next_adjacent
     {s : SymbolicState} {p q : Position} {rest : List Position}
     (h : ValidPath s (p :: q :: rest)) :
@@ -519,8 +554,6 @@ theorem validPath_next_adjacent
   simp [ValidPath] at h
   exact h.1
 
-/- If a path has at least two positions and is valid, then the first next tile
-   is safe. -/
 theorem validPath_next_safe
     {s : SymbolicState} {p q : Position} {rest : List Position}
     (h : ValidPath s (p :: q :: rest)) :
@@ -528,7 +561,6 @@ theorem validPath_next_safe
   simp [ValidPath] at h
   exact h.2.1
 
-/- The tail of a valid path is also a valid path. -/
 theorem validPath_tail
     {s : SymbolicState} {p q : Position} {rest : List Position}
     (h : ValidPath s (p :: q :: rest)) :
@@ -536,7 +568,6 @@ theorem validPath_tail
   simp [ValidPath] at h
   exact h.2.2
 
-/- Safety consequences for the next step of a valid path. -/
 theorem validPath_next_inBounds
     {s : SymbolicState} {p q : Position} {rest : List Position}
     (h : ValidPath s (p :: q :: rest)) :
@@ -567,17 +598,18 @@ theorem validPath_next_not_chest
     q ∉ s.chests := by
   exact isSafe_not_chest (validPath_next_safe h)
 
+theorem validPath_next_not_npc
+    {s : SymbolicState} {p q : Position} {rest : List Position}
+    (h : ValidPath s (p :: q :: rest)) :
+    q ∉ s.npcs := by
+  exact isSafe_not_npc (validPath_next_safe h)
+
 theorem validPath_next_gap_or_bridge
     {s : SymbolicState} {p q : Position} {rest : List Position}
     (h : ValidPath s (p :: q :: rest)) :
     q ∉ s.gaps ∨ q ∈ s.bridges := by
   exact isSafe_gap_or_bridge (validPath_next_safe h)
 
-/- A path is safe if it satisfies ValidPath.
-
-   This theorem is intentionally simple: it gives a named safety theorem that
-   can be cited in the report.
--/
 def SafePath (s : SymbolicState) (path : List Position) : Prop :=
   ValidPath s path
 
@@ -587,20 +619,12 @@ theorem validPath_is_safePath
     SafePath s path := by
   exact h
 
-/- Soundness theorem for a planner result.
-
-   If a path plan is sound, then the movement path used by the planner is safe.
-   This is the theorem that corresponds most directly to the Python BFS layer:
-   BFS may be implemented in Python, but Lean proves what must be true of any
-   accepted BFS result.
--/
 theorem sound_plan_is_safe
     {s : SymbolicState} {start : Position} {goals path : List Position}
     (h : PathPlanSound s start goals path) :
     SafePath s path := by
   exact validPath_is_safePath h.valid
 
-/- If a sound plan has at least one movement step, that next step is safe. -/
 theorem sound_plan_next_safe
     {s : SymbolicState} {start p q : Position}
     {goals : List Position} {rest : List Position}
@@ -608,7 +632,6 @@ theorem sound_plan_next_safe
     isSafe s q := by
   exact validPath_next_safe h.valid
 
-/- If a sound plan has at least one movement step, that next step is adjacent. -/
 theorem sound_plan_next_adjacent
     {s : SymbolicState} {start p q : Position}
     {goals : List Position} {rest : List Position}
@@ -616,23 +639,6 @@ theorem sound_plan_next_adjacent
     adjacent p q := by
   exact validPath_next_adjacent h.valid
 
-/- If a sound plan has at least one movement step, that next step is not a trap. -/
-theorem sound_plan_next_not_trap
-    {s : SymbolicState} {start p q : Position}
-    {goals : List Position} {rest : List Position}
-    (h : PathPlanSound s start goals (p :: q :: rest)) :
-    q ∉ s.traps := by
-  exact validPath_next_not_trap h.valid
-
-/- If a sound plan has at least one movement step, that next step is not a wall. -/
-theorem sound_plan_next_not_wall
-    {s : SymbolicState} {start p q : Position}
-    {goals : List Position} {rest : List Position}
-    (h : PathPlanSound s start goals (p :: q :: rest)) :
-    q ∉ s.walls := by
-  exact validPath_next_not_wall h.valid
-
-/- If a sound plan has at least one movement step, that next step is inside the map. -/
 theorem sound_plan_next_inBounds
     {s : SymbolicState} {start p q : Position}
     {goals : List Position} {rest : List Position}
@@ -640,9 +646,42 @@ theorem sound_plan_next_inBounds
     inBounds q := by
   exact validPath_next_inBounds h.valid
 
-/-!
-  Generic goal predicates used by task-level proofs.
--/
+theorem sound_plan_next_not_wall
+    {s : SymbolicState} {start p q : Position}
+    {goals : List Position} {rest : List Position}
+    (h : PathPlanSound s start goals (p :: q :: rest)) :
+    q ∉ s.walls := by
+  exact validPath_next_not_wall h.valid
+
+theorem sound_plan_next_not_trap
+    {s : SymbolicState} {start p q : Position}
+    {goals : List Position} {rest : List Position}
+    (h : PathPlanSound s start goals (p :: q :: rest)) :
+    q ∉ s.traps := by
+  exact validPath_next_not_trap h.valid
+
+theorem sound_plan_next_not_monster
+    {s : SymbolicState} {start p q : Position}
+    {goals : List Position} {rest : List Position}
+    (h : PathPlanSound s start goals (p :: q :: rest)) :
+    q ∉ s.monsters := by
+  exact validPath_next_not_monster h.valid
+
+theorem sound_plan_next_not_chest
+    {s : SymbolicState} {start p q : Position}
+    {goals : List Position} {rest : List Position}
+    (h : PathPlanSound s start goals (p :: q :: rest)) :
+    q ∉ s.chests := by
+  exact validPath_next_not_chest h.valid
+
+theorem sound_plan_next_gap_or_bridge
+    {s : SymbolicState} {start p q : Position}
+    {goals : List Position} {rest : List Position}
+    (h : PathPlanSound s start goals (p :: q :: rest)) :
+    q ∉ s.gaps ∨ q ∈ s.bridges := by
+  exact validPath_next_gap_or_bridge h.valid
+
+/- Generic goal predicates. -/
 
 def ReachesPosition (p : Position) (s : SymbolicState) : Prop :=
   s.player = p
@@ -659,13 +698,14 @@ def ChestCleared (c : Position) (s : SymbolicState) : Prop :=
 def MonsterCleared (m : Position) (s : SymbolicState) : Prop :=
   m ∉ s.monsters
 
+def ButtonPressed (b : Position) (s : SymbolicState) : Prop :=
+  b ∈ s.pressedButtons
+
+def SwitchCountAtLeast (n : Nat) (s : SymbolicState) : Prop :=
+  n ≤ s.switchCount
+
 def TaskCompletedByExit (e : ExitRule) (s : SymbolicState) : Prop :=
   s.player = e.target
-
-/-!
-  A successful action plan is an executable action list whose final state
-  satisfies a symbolic goal predicate.
--/
 
 def SuccessfulPlan
     (s0 : SymbolicState)
@@ -674,22 +714,12 @@ def SuccessfulPlan
   ∃ finalState : SymbolicState,
     Exec s0 actions finalState ∧ goal finalState
 
+/- -------------------------------------------------------------------------- -/
+/- Task-level abstract composition theorems.                                  -/
+/- -------------------------------------------------------------------------- -/
+
 namespace Task1
 
-/--
-Task 1 strategy correctness.
-
-The abstract Task 1 strategy is:
-
-1. execute a planner-produced path to a chest-adjacent state;
-2. open the key chest;
-3. execute a planner-produced path to the exit;
-4. use the exit.
-
-The theorem proves that, if every stage is executable and the exit rule is
-satisfied, then there exists a successful action plan whose final state reaches
-the exit target.
--/
 theorem task1_strategy_correct
     {s0 s1 s2 : SymbolicState}
     {chest : Position}
@@ -719,37 +749,16 @@ theorem task1_strategy_correct
     unfold afterUseExit
     rfl
 
-/--
-Opening the Task 1 chest increases the number of keys by one.
-This theorem captures the symbolic effect used by the Python planner when it
-updates its inventory after interacting with a chest.
--/
 theorem task1_open_chest_gives_key
     {s : SymbolicState} {chest : Position}
     (_hOpen : canOpenChest s chest) :
     HasAtLeastKeys (s.inventory.keys + 1) (afterOpenChest s chest) := by
-   simp [HasAtLeastKeys, afterOpenChest]
+  simp [HasAtLeastKeys, afterOpenChest]
 
 end Task1
 
-
 namespace Task2
 
-/--
-Task 2 strategy correctness.
-
-The abstract Task 2 strategy is:
-
-1. execute a planner-produced path to a monster-adjacent state;
-2. attack and remove the monster;
-3. execute a planner-produced path to a chest-adjacent state;
-4. open the key chest;
-5. execute a planner-produced path to the exit;
-6. use the exit.
-
-This corresponds to the Python search policy for tasks where combat must happen
-before the key/chest/exit sequence can be completed.
--/
 theorem task2_strategy_correct
     {s0 s1 s2 s3 : SymbolicState}
     {monster chest : Position}
@@ -785,10 +794,6 @@ theorem task2_strategy_correct
     unfold afterUseExit
     rfl
 
-/--
-After attacking a monster in the abstract combat model, the resulting state is
-exactly the state where that monster has been erased from the monster list.
--/
 theorem task2_attack_updates_monsters
     {s : SymbolicState} {monster : Position}
     (_hAttack : canAttack s monster) :
@@ -798,19 +803,8 @@ theorem task2_attack_updates_monsters
 
 end Task2
 
-
 namespace Task3
 
-/--
-Generic three-stage Task 3 composition theorem.
-
-Task 3 may require several symbolic phases, such as combat, collecting a key,
-opening a chest or door, and reaching an exit.  Instead of hard-coding a concrete
-map, this theorem proves the reusable planner property:
-
-if three executable stages compose into a final state satisfying the task goal,
-then the concatenated action list is a successful plan.
--/
 theorem task3_three_stage_strategy_correct
     {s0 s1 s2 s3 : SymbolicState}
     {exitRule : ExitRule}
@@ -832,13 +826,6 @@ theorem task3_three_stage_strategy_correct
 
   · exact hGoal
 
-/--
-A more concrete Task 3 theorem for the common monster → chest/key → exit
-pattern.
-
-This is similar to Task 2, but it is placed in Task3 because the third task can
-be described as a longer composition of symbolic subgoals.
--/
 theorem task3_monster_chest_exit_strategy_correct
     {s0 s1 s2 s3 : SymbolicState}
     {monster chest : Position}
@@ -876,16 +863,8 @@ theorem task3_monster_chest_exit_strategy_correct
 
 end Task3
 
-
 namespace Task4
 
-/--
-Task 4 bridge/gap safety property.
-
-If the symbolic planner accepts a path and the next tile is a gap, then that gap
-must already be in the bridge list.  Therefore, the planner never accepts a move
-onto an unbridged gap.
--/
 theorem task4_gap_step_requires_bridge
     {s : SymbolicState} {p q : Position} {rest : List Position}
     (hPath : ValidPath s (p :: q :: rest))
@@ -899,14 +878,12 @@ theorem task4_gap_step_requires_bridge
   | inr hBridge =>
       exact hBridge
 
-/--
-Task 4 bridge-stage strategy correctness.
+theorem task4_toggle_switch_increases_counter
+    {s : SymbolicState} {sw : Position}
+    (_hSwitch : canToggleSwitch s sw) :
+    SwitchCountAtLeast (s.switchCount + 1) (afterToggleSwitch s sw) := by
+  simp [SwitchCountAtLeast, afterToggleSwitch]
 
-The detailed bridge/button mechanism is abstracted as a preparatory executable
-stage.  If that stage reaches a state from which the planner can safely move to
-the exit and the exit rule is satisfied, then the combined plan completes the
-task.
--/
 theorem task4_bridge_stage_strategy_correct
     {s0 s1 s2 : SymbolicState}
     {exitRule : ExitRule}
@@ -932,18 +909,46 @@ theorem task4_bridge_stage_strategy_correct
     unfold afterUseExit
     rfl
 
-end Task4
+theorem task4_switch_then_exit_strategy_correct
+    {s0 s1 s2  : SymbolicState}
+    {sw : Position}
+    {exitRule : ExitRule}
+    {goSwitch goExit : List Action}
+    (hGoSwitch : Exec s0 goSwitch s1)
+    (hSwitch : canToggleSwitch s1 sw)
+    (hGoExit : Exec (afterToggleSwitch s1 sw) goExit s2)
+    (hExit : canUseExit s2 exitRule) :
+    ∃ plan,
+      SuccessfulPlan s0 plan (TaskCompletedByExit exitRule) := by
+  let plan :=
+    goSwitch ++
+      ([Action.attack] ++
+        (goExit ++ [actionForDir exitRule.direction]))
 
+  refine ⟨plan, ?_⟩
+  unfold SuccessfulPlan
+  refine ⟨afterUseExit s2 exitRule, ?_, ?_⟩
+
+  · exact exec_append hGoSwitch
+      (exec_append (exec_toggle_switch hSwitch)
+        (exec_append hGoExit
+          (exec_use_exit hExit)))
+
+  · unfold TaskCompletedByExit
+    unfold afterUseExit
+    rfl
+
+end Task4
 
 namespace Task5
 
-/--
-Generic four-stage Task 5 composition theorem.
+theorem task5_press_button_records_button
+    {s : SymbolicState} {b : Position}
+    (_hButton : canPressButton s b) :
+    ButtonPressed b (afterPressButton s b) := by
+  unfold ButtonPressed
+  exact afterPressButton_contains
 
-Task 5 is treated as a longer symbolic plan.  The theorem states that if four
-planner stages execute successfully and the final state satisfies the symbolic
-goal, then their concatenation is a successful plan.
--/
 theorem task5_four_stage_strategy_correct
     {s0 s1 s2 s3 s4 : SymbolicState}
     {exitRule : ExitRule}
@@ -970,12 +975,41 @@ theorem task5_four_stage_strategy_correct
 
   · exact hGoal
 
-/--
-Task 5 exit-finalization theorem.
+theorem task5_button_key_exit_strategy_correct
+    {s0 s1 s2 s3  : SymbolicState}
+    {button chest : Position}
+    {exitRule : ExitRule}
+    {goButton goChest goExit : List Action}
+    (hGoButton : Exec s0 goButton s1)
+    (hButton : canPressButton s1 button)
+    (hGoChest : Exec (afterPressButton s1 button) goChest s2)
+    (hOpen : canOpenChest s2 chest)
+    (hGoExit : Exec (afterOpenChest s2 chest) goExit s3)
+    (hExit : canUseExit s3 exitRule) :
+    ∃ plan,
+      SuccessfulPlan s0 plan (TaskCompletedByExit exitRule) := by
+  let plan :=
+    goButton ++
+      ([Action.attack] ++
+        (goChest ++
+          ([Action.attack] ++
+            (goExit ++ [actionForDir exitRule.direction]))))
 
-This version is useful when the last symbolic phase is explicitly:
-move to an exit state, then use the exit.
--/
+  refine ⟨plan, ?_⟩
+  unfold SuccessfulPlan
+  refine ⟨afterUseExit s3 exitRule, ?_, ?_⟩
+
+  · exact exec_append hGoButton
+      (exec_append (exec_press_button hButton)
+        (exec_append hGoChest
+          (exec_append (exec_open_key_chest hOpen)
+            (exec_append hGoExit
+              (exec_use_exit hExit)))))
+
+  · unfold TaskCompletedByExit
+    unfold afterUseExit
+    rfl
+
 theorem task5_exit_final_strategy_correct
     {s0 s1 s2 s3 s4 : SymbolicState}
     {exitRule : ExitRule}
@@ -1008,6 +1042,5 @@ theorem task5_exit_final_strategy_correct
     rfl
 
 end Task5
-
 
 end NesyLinkFormalization
