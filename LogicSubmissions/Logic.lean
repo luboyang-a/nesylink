@@ -737,6 +737,12 @@ def SwitchCountAtLeast (n : Nat) (s : SymbolicState) : Prop :=
 def TaskCompletedByExit (e : ExitRule) (s : SymbolicState) : Prop :=
   s.player = e.target ∧ s.completed = true
 
+def AllChestsCleared (s : SymbolicState) : Prop :=
+  s.chests = []
+
+def Task5WorldCompleted (e : ExitRule) (s : SymbolicState) : Prop :=
+  AllChestsCleared s ∧ TaskCompletedByExit e s
+
 def SuccessfulPlan
     (s0 : SymbolicState)
     (actions : List Action)
@@ -1013,13 +1019,14 @@ namespace Task5
 
 /-
   Task5 is intentionally modeled as a multi-stage symbolic plan rather than a
-  concrete fixed map.  The theorem below says: if the topology exploration /
-  button / chest / combat / exit stages are executable and the final exit is
-  a completing exit, then the composed action list is a successful plan.
+  concrete fixed map.  In the Python agent, Task5 is handled by visual room
+  graph exploration: the agent opens reachable chests, walks onto visible
+  buttons, explores exits, and finally uses a completing exit.
 
-  This matches the report claim: Lean verifies the symbolic planner layer and
-  final-goal composition, while empirical evaluation checks pixel extraction
-  and robustness on original/spatial/color variants.
+  Lean does not prove that the pixel parser or the empirical exploration policy
+  always succeeds on every spatial variant.  Instead, it proves that once the
+  symbolic stages are executable, they can be composed into a successful
+  symbolic plan.
 -/
 theorem task5_four_stage_strategy_correct
     {s0 s1 s2 s3 s4 : SymbolicState}
@@ -1047,13 +1054,59 @@ theorem task5_four_stage_strategy_correct
 
   · exact hGoal
 
+/-
+  This theorem strengthens the Task5 goal to a world-completion predicate:
+  all relevant chests are cleared and the final completing exit is used.
+  It is useful for explaining Task5 in the report without pretending that Lean
+  verifies the raw-pixel exploration code itself.
+-/
+theorem task5_world_completion_strategy_correct
+    {s0 s1 s2 s3 s4 : SymbolicState}
+    {exitRule : ExitRule}
+    {stage1 stage2 stage3 stage4 : List Action}
+    (h1 : Exec s0 stage1 s1)
+    (h2 : Exec s1 stage2 s2)
+    (h3 : Exec s2 stage3 s3)
+    (h4 : Exec s3 stage4 s4)
+    (hGoal : Task5WorldCompleted exitRule s4) :
+    ∃ plan,
+      SuccessfulPlan s0 plan (Task5WorldCompleted exitRule) := by
+  let plan :=
+    stage1 ++
+      (stage2 ++
+        (stage3 ++ stage4))
+
+  refine ⟨plan, ?_⟩
+  unfold SuccessfulPlan
+  refine ⟨s4, ?_, ?_⟩
+
+  · exact exec_append h1
+      (exec_append h2
+        (exec_append h3 h4))
+
+  · exact hGoal
+
+theorem task5_world_completed_goal
+    {s : SymbolicState} {exitRule : ExitRule}
+    (hClear : AllChestsCleared s)
+    (hExit : TaskCompletedByExit exitRule s) :
+    Task5WorldCompleted exitRule s := by
+  exact ⟨hClear, hExit⟩
+
+/-
+  The Python policy handles a button target as ("walk", button), not as an
+  adjacent ACTION_A interaction.  Therefore this theorem explicitly requires
+  that after the button stage, the button has been recorded as pressed.
+-/
 theorem task5_button_key_exit_strategy_correct
     {s0 s1 s2 s3 : SymbolicState}
+    {button : Position}
     {keyChest : ChestRule}
     {exitRule : ExitRule}
     {goButton goChest goExit : List Action}
     (hExitComplete : exitRule.completeTask = true)
     (hGoButton : Exec s0 goButton s1)
+    (_hButton : ButtonPressed button s1)
     (hGoChest : Exec s1 goChest s2)
     (hOpen : canOpenChest s2 keyChest)
     (hGoExit : Exec (afterOpenChest s2 keyChest) goExit s3)
