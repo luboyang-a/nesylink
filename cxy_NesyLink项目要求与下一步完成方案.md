@@ -11,6 +11,7 @@
 |---|---|---|
 | `submissions/robust_cxy_agent.py` | 我的当前候选策略 | 我的修改都写这里，我的测评显式指定它 |
 | `submissions/robust_cxy_legacy_agent.py` | 我 7 月 14 日 04:51 版本的兼容实现 | 一般不直接修改 |
+| `submissions/robust_team_snapshot_agent.py` | 团队公共 new 的固定快照 | 只供已验证的 Task 5 grayscale 分支复用，保留来源，不随公共文件变化 |
 | `submissions/robust_new_agent.py` | 团队公共候选策略 | 保持拉取状态，不直接混入我的实验 |
 | `utils/check_*.py`、`utils/evaluate_final_agent.ps1` | 团队公共测试脚本 | 保持默认测试公共 new；我的测试在命令中显式绑定 cxy |
 
@@ -24,12 +25,37 @@
 - [x] P0 完成：Task 5 spatial A/B/C 全部打开 4 个宝箱、零受伤并达到 `world_completed`；
 - [x] `LogicSubmissions/Logic.lean` 编译通过，无 `sorry`、`admit`、`axiom`；
 - [x] 我的 cxy 文件与团队公共 new 文件已经分开。
+- [x] 已完成五关各 10 episode 的 60/30/10 小样本，结果保存在 `eval_results/cxy_final_10.json`；共 50 局成功 40 局，总成功率 80%。
+- [x] 修复后复测结果保存在 `eval_results/cxy_final_10_fixed.json`；共 50 局成功 50 局，总成功率 100%。
+
+### 10-episode 小样本结果
+
+| Task | original | spatial | color | 总计 |
+|---|---:|---:|---:|---:|
+| Task 1 | 6/6 | 3/3 | 1/1 grayscale | 10/10 |
+| Task 2 | 0/6 | 1/3 | 0/1 grayscale | 1/10 |
+| Task 3 | 6/6 | 3/3 | 1/1 grayscale | 10/10 |
+| Task 4 | 6/6 | 3/3 | 1/1 grayscale | 10/10 |
+| Task 5 | 6/6 | 3/3 | 0/1 grayscale | 9/10 |
+
+当前结论：Task 1、3、4 已通过本轮全部样本；Task 5 只需先修 grayscale；Task 2 是主要阻塞项，原始地图、spatial A/C 和 grayscale 均未通关。`--num-envs 10` 的颜色阶段只有一局 grayscale，尚未测试 dark、bright、high_contrast、inverted。
+
+上述表格是修复前基线。修复后的同口径结果为五个 Task 各 10/10，original、spatial A/B/C 和 grayscale 共 50/50 全部通过。
+
+### 序号 3 定向修复结果
+
+- Task 2 已改为复用我自己的 `0c3c087` legacy 策略；original、spatial A/B/C、grayscale 定向回归全部通过；
+- Task 5 grayscale 借鉴团队公共 new 的已验证策略快照，1089 步、零受伤并达到 `world_completed`；
+- 四种补充颜色结果：Task 2 的 dark、bright、high_contrast、inverted 全部通过；Task 1/3/4 的 dark、bright、inverted 通过但 high_contrast 失败；
+- 团队策略对照证明 Task 5 的 dark、bright、inverted 均可 1089 步通关，因此 cxy 已将 grayscale/dark/bright/inverted 固定委托给团队策略快照；Task 5 high_contrast 在个人和团队策略中都失败；
+- 没有修改团队公共 `robust_new_agent.py` 或公共测试脚本；
+- 当前剩余颜色问题已经收敛为 high_contrast：Task 1、3、4、5 失败，Task 2 通过。
 
 ### 下一步（按顺序做）
 
-1. **保存当前版本**：提交 `robust_cxy_agent.py` 和它依赖的 `robust_cxy_legacy_agent.py`，记录 commit；
-2. **跑 10 局小样本**：五关都用 cxy，按正式 60/30/10 套件运行，保存 `eval_results/cxy_final_10.json`；
-3. **修失败项**：优先检查 `high_contrast`，再处理 Task 2–5 的颜色或布局失败；
+1. [x] **保存当前版本**：代码提交为 `a82dfcb`，个人进度文档提交为 `7232aa2`；
+2. [x] **跑 10 局小样本**：已生成 `eval_results/cxy_final_10.json`；
+3. [x] **修复小样本失败项**：Task 2 和 Task 5 grayscale 已修复，`cxy_final_10_fixed.json` 为 50/50；补充颜色中仅 high_contrast 尚未解决，作为已知局限记录；
 4. **跑 100 局正式测评**：保存 `eval_results/cxy_final_100.json`，记录命令、seed、commit、步数设置；
 5. **补 Lean 对应**：优先修正怪物 HP、宝箱 loot、按钮触发、Task 5 全宝箱目标，并整理 Python—Lean 对应表；
 6. **完成报告与提交包**：使用最终 JSON 写结果，补截图、失败案例、复现命令和干净环境测试；
@@ -37,7 +63,7 @@
 
 ### 目前还没完成
 
-- [ ] 当前 cxy 的五关完整 60/30/10 JSON；
+- [x] 当前 cxy 的五关 10-episode 60/30/10 小样本 JSON；
 - [ ] 每关 100 episode 的正式结果；
 - [ ] Lean 与 Python 关键机制完全对齐；
 - [ ] 正式报告、截图、干净环境复现和最终 ZIP；
