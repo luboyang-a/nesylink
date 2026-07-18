@@ -18,7 +18,6 @@ from nesylink.core.constants import (
     MAP_TILE_WIDTH,
     TILE_SIZE,
 )
-from submissions.robust_cxy_legacy_agent import Policy as SpatialCLegacyPolicy
 
 
 Position = tuple[int, int]
@@ -305,6 +304,24 @@ def _entity_tile_from_mask(mask: np.ndarray, fallback: Position = (0, 0)) -> Pos
     )
 
 
+def _player_top_left_px(frame: np.ndarray, facing_action: int) -> Position | None:
+    """Recover the player's pixel alignment from its tunic colors.
+
+    Contact knockback can leave the runtime position between tiles.  Tile-only
+    perception cannot tell that an AABB still overlaps the neighbouring wall,
+    but the sprite's tunic has a stable offset inside its 16px bounding box.
+    """
+    if _is_binary_high_contrast(frame):
+        return None
+    mask = _semantic_mask(frame, "player")
+    ys, xs = np.nonzero(mask[: MAP_TILE_HEIGHT * TILE_SIZE])
+    if len(xs) == 0:
+        return None
+    # The mirrored left-facing sprite starts its tunic one pixel farther in.
+    tunic_left = 5 if facing_action == ACTION_LEFT else 4
+    return int(xs.min()) - tunic_left, int(ys.min()) - 2
+
+
 def _entity_tile_by_tile_count(mask: np.ndarray, fallback: Position = (0, 0), *, min_pixels: int = 1) -> Position:
     best = fallback
     best_count = min_pixels - 1
@@ -327,6 +344,37 @@ def _tiles_from_mask(mask: np.ndarray, *, min_pixels: int) -> set[Position]:
                 positions.add((x, y))
 
     return positions
+
+
+def _entity_tiles_from_mask(mask: np.ndarray, *, min_pixels: int) -> set[Position]:
+    """Collapse the several tiles covered by one moving sprite to one tile."""
+    counts: dict[Position, int] = {}
+    for y in range(MAP_TILE_HEIGHT):
+        for x in range(MAP_TILE_WIDTH):
+            pos = (x, y)
+            count = _count_mask(_tile_mask(mask, pos))
+            if count >= min_pixels:
+                counts[pos] = count
+
+    result: set[Position] = set()
+    remaining = set(counts)
+    while remaining:
+        seed = remaining.pop()
+        component = {seed}
+        frontier = [seed]
+        while frontier:
+            current = frontier.pop()
+            cx, cy = current
+            touching = {
+                pos
+                for pos in remaining
+                if abs(pos[0] - cx) <= 1 and abs(pos[1] - cy) <= 1
+            }
+            remaining -= touching
+            component |= touching
+            frontier.extend(touching)
+        result.add(max(component, key=lambda pos: (counts[pos], pos)))
+    return result
 
 
 def _is_binary_high_contrast(frame: np.ndarray) -> bool:
@@ -421,8 +469,8 @@ def _extract_scene_default(frame: np.ndarray, previous_player: Position = (0, 0)
         frame, COLORS["monster_patroller"]
     )
     monster_mask = active_monster_mask | _color_mask(frame, COLORS["monster_ambusher"])
-    monsters = _tiles_from_mask(monster_mask, min_pixels=8)
-    active_monsters = _tiles_from_mask(active_monster_mask, min_pixels=8)
+    monsters = _entity_tiles_from_mask(monster_mask, min_pixels=8)
+    active_monsters = _entity_tiles_from_mask(active_monster_mask, min_pixels=8)
     ambush_monsters = monsters - active_monsters
 
     walls: set[Position] = set()
@@ -561,8 +609,8 @@ def _extract_scene_semantic(frame: np.ndarray, previous_player: Position = (0, 0
 
     active_monster_mask = masks["monster_active"]
     monster_mask = active_monster_mask | masks["monster_ambush"]
-    monsters = _tiles_from_mask(monster_mask, min_pixels=8)
-    active_monsters = _tiles_from_mask(active_monster_mask, min_pixels=8)
+    monsters = _entity_tiles_from_mask(monster_mask, min_pixels=8)
+    active_monsters = _entity_tiles_from_mask(active_monster_mask, min_pixels=8)
     ambush_monsters = monsters - active_monsters
 
     walls: set[Position] = set()
@@ -816,14 +864,18 @@ def _room_hint(
     if buttons or (npcs and exit_count >= 3):
         return "multi_exit_hub"
 
-    if traps:
-        return "task2"
-
-    if bridges or len(gaps) > 20:
+    # Color transforms can collapse the bridge brown into the same gray value
+    # as ordinary floor pixels.  A real bridge room also has visible abyss/gap
+    # tiles; requiring gaps prevents grayscale floor tiles from turning every
+    # ordinary room into task4_center.
+    if len(gaps) > 20 or (bridges and gaps):
         return "task4_center"
 
     if switches:
         return "task4_west"
+
+    if traps:
+        return "task2"
 
     if chests and visible_exits == {"south"}:
         return "task4_north"
@@ -1058,7 +1110,6 @@ class Policy:
         self.previous_player: Position = (0, 0)
         self.last_move = ACTION_DOWN
         self.attack_cooldown = 0
-        self.shield_cooldown = 0
         self.move_queue: deque[int] = deque()
         self.queue_next_move = True
         self.opened: set[tuple[str, Position]] = set()
@@ -1072,11 +1123,17 @@ class Policy:
         self.stationary_steps = 0
         self.health = 999
         self.visual_mode = "default"
-        self.player_center_px: tuple[float, float] | None = None
-        self.task5_use_bottom_route = False
-        self.cxy_legacy_policy = SpatialCLegacyPolicy()
-        self.task5_layout_decided = False
-        self.task5_use_spatial_c_policy = False
+        self.task4_adjust_bridge = False
+        self.task5_entry_guard = 0
+        self.task5_exit_guard = 0
+        self.task5_waiting_hub_block = False
+        self.task5_hub_safe_steps = 0
+        self.task5_hub_shield_steps = 0
+        self.current_player_px: tuple[int, int] | None = None
+        self.task5_alignment_action = ACTION_NOOP
+        self.task5_alignment_steps = 0
+        self.task5_hub_blocking = False
+        self.task5_hub_block_done = False
 
     def reset(self, seed: int | None = None, task_id: str | None = None) -> None:
         del seed
@@ -1085,7 +1142,6 @@ class Policy:
         self.previous_player = (0, 0)
         self.last_move = ACTION_DOWN
         self.attack_cooldown = 0
-        self.shield_cooldown = 0
         self.move_queue.clear()
         self.queue_next_move = True
         self.opened.clear()
@@ -1099,68 +1155,28 @@ class Policy:
         self.stationary_steps = 0
         self.health = 999
         self.visual_mode = "default"
-        self.player_center_px = None
-        self.task5_use_bottom_route = False
-        self.cxy_legacy_policy.reset(task_id=task_id)
-        self.task5_layout_decided = False
-        self.task5_use_spatial_c_policy = False
+        self.task4_adjust_bridge = False
+        self.task5_entry_guard = 0
+        self.task5_exit_guard = 0
+        self.task5_waiting_hub_block = False
+        self.task5_hub_safe_steps = 0
+        self.task5_hub_shield_steps = 0
+        self.current_player_px = None
+        self.task5_alignment_action = ACTION_NOOP
+        self.task5_alignment_steps = 0
+        self.task5_hub_blocking = False
+        self.task5_hub_block_done = False
 
     def act(self, obs: np.ndarray, info: dict[str, Any] | None = None) -> int:
         frame = np.asarray(obs)
         self.visual_mode = _visual_mode(frame)
-        self.player_center_px = None
-        if self.visual_mode == "default":
-            player_mask = _color_mask(frame, COLORS["player"]) | _color_mask(
-                frame, COLORS["player_light"]
-            )
-            ys, xs = np.nonzero(player_mask)
-            if len(xs) > 0:
-                self.player_center_px = (
-                    (float(xs.min()) + float(xs.max())) / 2.0,
-                    (float(ys.min()) + float(ys.max())) / 2.0,
-                )
         scene = extract_scene(obs, self.previous_player)
+        self.current_player_px = _player_top_left_px(frame, self.last_move)
         if isinstance(info, dict):
             task_id_from_info = info.get("task_id")
             if isinstance(task_id_from_info, str) and task_id_from_info:
                 self.task_id = task_id_from_info
 
-        # Preserve the verified 0c3c087 behaviour for the fixed spatial_c
-        # layout.  Its initial hub chest at (2, 2) distinguishes it from the
-        # default map and spatial_a/b using pixels alone.
-        if self.task_id.endswith("task_4"):
-            action = self.cxy_legacy_policy.act(obs, info)
-            self.task_id = self.cxy_legacy_policy.task_id
-            return action
-        if self.task_id.endswith("task_5") and not self.task5_layout_decided:
-            self.task5_use_spatial_c_policy = (
-                self.visual_mode == "default"
-                and scene.room_hint == "multi_exit_hub"
-                and (2, 2) in scene.chests
-            )
-            self.task5_layout_decided = True
-        if self.task5_use_spatial_c_policy:
-            action = self.cxy_legacy_policy.act(obs, info)
-            self.task_id = self.cxy_legacy_policy.task_id
-            return action
-
-        previous_player = self.previous_player
-        room_transition = manhattan(scene.player, previous_player) > 2
-        if room_transition:
-            self.move_queue.clear()
-            self.queue_next_move = False
-            self.stationary_steps = 0
-            if self.pending_exit is not None:
-                source, _planned_direction = self.pending_exit
-                x, y = previous_player
-                distances = {
-                    "north": y,
-                    "south": MAP_TILE_HEIGHT - 1 - y,
-                    "west": x,
-                    "east": MAP_TILE_WIDTH - 1 - x,
-                }
-                actual_direction = min(distances, key=distances.get)
-                self.pending_exit = (source, actual_direction)
 
         if scene.player == self.previous_player and self.last_action in MOVE_ACTIONS:
             self.stationary_steps += 1
@@ -1176,105 +1192,254 @@ class Policy:
 
         assume_default_sword = not self.task_id.endswith("task_4")
         tools_now = tools_from_inventory(inv, assume_default_sword=assume_default_sword)
-        if self.shield_cooldown > 0:
-            self.shield_cooldown -= 1
 
-        stall_limit = (
-            16
-            if (
-                self.task_id.endswith("task_5")
-                and self.pending_exit is not None
-                and not scene.monsters
-            )
-            else 48
+        task5_hub_hunt = (
+            self.task_id.endswith("task_5")
+            and scene.room_hint == "multi_exit_hub"
+            and self.current_room is not None
+            and "south" in self.rooms[self.current_room].edges
+            and bool(scene.active_monsters)
         )
-        if self.stationary_steps >= stall_limit:
+        hub_threat_distance = min(
+            (manhattan(scene.player, monster) for monster in scene.active_monsters),
+            default=99,
+        )
+        if self.task5_hub_blocking:
+            if hub_threat_distance <= 1:
+                self.task5_hub_blocking = False
+                self.task5_hub_block_done = True
+                self.task5_hub_shield_steps = 0
+            elif hub_threat_distance == 2 and "shield" in tools_now:
+                self.move_queue.clear()
+                if self.task5_hub_shield_steps <= 0:
+                    self.task5_hub_shield_steps = 5
+                    return self._emit(ACTION_B)
+                self.task5_hub_shield_steps -= 1
+                monster = min(
+                    scene.active_monsters,
+                    key=lambda pos: manhattan(scene.player, pos),
+                )
+                path = bfs(
+                    scene,
+                    approach_tiles(scene, monster, self.opened),
+                    self.opened,
+                )
+                if path and len(path) > 1:
+                    action = action_from_step(path[0], path[1])
+                    self.last_move = action
+                    return self._emit(action)
+                return self._emit(ACTION_B)
+            else:
+                self.task5_hub_blocking = False
+                self.task5_hub_block_done = True
+                self.task5_hub_shield_steps = 0
+        if (
+            task5_hub_hunt
+            and not self.task5_hub_block_done
+            and hub_threat_distance <= 2
+            and "shield" in tools_now
+        ):
+            self.task5_hub_blocking = True
+            self.task5_hub_shield_steps = 5
             self.move_queue.clear()
-            if self.pending_exit is not None and not self.task_id.endswith("task_5"):
-                self.blocked_exits[self.pending_exit] = keys
-                self.pending_exit = None
+            return self._emit(ACTION_B)
+
+        if (
+            self.task_id.endswith("task_5")
+            and self.task5_entry_guard > 0
+            and scene.monsters
+            and "shield" in tools_now
+        ):
+            self.task5_entry_guard -= 1
+            self.move_queue.clear()
+            return self._emit(ACTION_B)
+
+        if self.task_id.endswith("task_5") and self.task5_alignment_steps > 0:
+            self.task5_alignment_steps -= 1
+            self.move_queue.clear()
+            self.queue_next_move = False
+            return self._emit(self.task5_alignment_action)
+
+        if (
+            self.task_id.endswith("task_5")
+            and self.task5_exit_guard > 0
+            and self.pending_exit is not None
+        ):
+            self.task5_exit_guard -= 1
+            self.move_queue.clear()
+            self.queue_next_move = False
+            return self._emit(DIR_TO_ACTION[self.pending_exit[1]])
+
+        # If an old per-tile movement queue has already reached the intended
+        # exit tile, discard its remaining pixel moves.  Replanning below will
+        # press through the door instead of sliding along the boundary.
+        if self.pending_exit is not None and self.current_room == self.pending_exit[0]:
+            pending_direction = self.pending_exit[1]
+            pending_tiles = scene.exits.get(pending_direction, set())
+            if not pending_tiles:
+                pending_tiles = default_exit_tiles(pending_direction)
+            if scene.player in pending_tiles:
+                pending_action = DIR_TO_ACTION.get(pending_direction)
+                if self.task_id.endswith("task_5"):
+                    self.move_queue.clear()
+                elif self.move_queue and self.move_queue[0] != pending_action:
+                    self.move_queue.clear()
+
+        overlapping_monsters = [
+            monster
+            for monster in scene.monsters
+            if manhattan(scene.player, monster) == 0
+        ]
+        if (
+            overlapping_monsters
+            and self.task_id.endswith("task_5")
+            and "shield" in tools_now
+        ):
+            self.move_queue.clear()
+            return self._emit(ACTION_B)
+
+        if self.stationary_steps >= 24:
+            self.move_queue.clear()
+            if self.pending_exit is not None:
+                source, direction = self.pending_exit
+                exit_tiles = scene.exits.get(direction, set()) or default_exit_tiles(direction)
+                # A failed movement somewhere on the route is not evidence
+                # that the door itself is locked.  Only blacklist an exit
+                # after the player has actually reached its boundary tiles
+                # and still cannot transition.
+                if self.current_room == source and scene.player in exit_tiles:
+                    if not self.task_id.endswith("task_5"):
+                        self.blocked_exits[self.pending_exit] = keys
+                        self.pending_exit = None
             self.stationary_steps = 0
-            x, y = scene.player
-            recovery = ACTION_LEFT if x >= MAP_TILE_WIDTH // 2 else ACTION_RIGHT
-            if self.last_action in {ACTION_LEFT, ACTION_RIGHT}:
-                recovery = ACTION_UP if y >= MAP_TILE_HEIGHT // 2 else ACTION_DOWN
-            if self.task_id.endswith("task_5"):
-                self.move_queue.extend([recovery] * 7)
+            pixel_pos = _player_top_left_px(frame, self.last_move)
+            recovery_steps = 1
+            if pixel_pos is not None:
+                px, py = pixel_pos
+                if self.last_action in {ACTION_UP, ACTION_DOWN}:
+                    offset = px % TILE_SIZE
+                    if offset:
+                        if offset <= TILE_SIZE // 2:
+                            recovery, recovery_steps = ACTION_LEFT, offset
+                        else:
+                            recovery, recovery_steps = ACTION_RIGHT, TILE_SIZE - offset
+                    else:
+                        recovery = ACTION_LEFT if scene.player[0] >= MAP_TILE_WIDTH // 2 else ACTION_RIGHT
+                else:
+                    offset = py % TILE_SIZE
+                    if offset:
+                        if offset <= TILE_SIZE // 2:
+                            recovery, recovery_steps = ACTION_UP, offset
+                        else:
+                            recovery, recovery_steps = ACTION_DOWN, TILE_SIZE - offset
+                    else:
+                        recovery = ACTION_UP if scene.player[1] >= MAP_TILE_HEIGHT // 2 else ACTION_DOWN
+                if (
+                    self.task_id.endswith("task_5")
+                    and self.pending_exit is not None
+                    and offset == 0
+                ):
+                    # Combat can leave Link exactly on a tile boundary but
+                    # outside the narrow doorway lane.  A one-pixel nudge
+                    # takes hundreds of blocked retries to correct; move half
+                    # a tile perpendicular to the door before replanning.
+                    recovery_steps = TILE_SIZE
+            else:
+                x, y = scene.player
+                recovery = ACTION_LEFT if x >= MAP_TILE_WIDTH // 2 else ACTION_RIGHT
+                if self.last_action in {ACTION_LEFT, ACTION_RIGHT}:
+                    recovery = ACTION_UP if y >= MAP_TILE_HEIGHT // 2 else ACTION_DOWN
+            if recovery_steps > 1:
+                if self.task_id.endswith("task_5") and self.pending_exit is not None:
+                    self.task5_alignment_action = recovery
+                    self.task5_alignment_steps = int(recovery_steps) - 1
+                else:
+                    self.move_queue.extend([recovery] * (recovery_steps - 1))
             return self._emit(recovery)
 
-        if self.move_queue and not any(
-            manhattan(scene.player, monster) == 1 for monster in scene.monsters
-        ):
+        task5_west_branch = (
+            self.task_id.endswith("task_5")
+            and scene.room_hint == "single_exit_branch"
+            and self.current_room is not None
+            and (
+                "east" in self.rooms[self.current_room].edges
+                or len(scene.monsters) >= 2
+                or any(y >= 5 for _, y in scene.walls)
+            )
+        )
+        combat_radius = 2 if task5_west_branch else 1
+        nearby_threat = any(
+            manhattan(scene.player, monster) <= combat_radius
+            for monster in scene.monsters
+        )
+        if self.move_queue and not nearby_threat:
             action = self.move_queue.popleft()
             self.last_move = action
             return self._emit(action)
+        if self.move_queue and nearby_threat:
+            self.move_queue.clear()
+
+        if self.attack_cooldown > 0:
+            # Re-evaluate the target every frame: moving monsters can leave
+            # the old facing direction pointing at an NPC or empty tile.
+            self.attack_cooldown = 0
 
         adjacent_monsters = [
             monster
             for monster in scene.monsters
             if manhattan(scene.player, monster) == 1
         ]
-        task5_multi_monster_branch = (
-            self.task_id.endswith("task_5")
-            and scene.room_hint == "single_exit_branch"
-            and len(scene.monsters) >= 2
-        )
-        defensive_monsters = adjacent_monsters
-        task5_preemptive_defense = task5_multi_monster_branch
-        if task5_preemptive_defense:
-            defensive_monsters = [
-                monster
-                for monster in scene.monsters
-                if manhattan(scene.player, monster) <= 2
-            ]
-        avoid_auto_attack_task4 = self.task_id.endswith("task_4") and self.visual_mode != "default"
 
+        avoid_auto_attack_task4 = self.task_id.endswith("task_4") and self.visual_mode != "default"
         if (
-            defensive_monsters
+            adjacent_monsters
             and self.task_id.endswith("task_5")
             and "shield" in tools_now
-            and (bool(adjacent_monsters) or self.shield_cooldown == 0)
             and self.last_action != ACTION_B
         ):
-            self.attack_cooldown = 0
-            self.shield_cooldown = 12
+            self.move_queue.clear()
             return self._emit(ACTION_B)
 
-        if task5_multi_monster_branch and adjacent_monsters and self.last_action == ACTION_B:
-            shielded_moves: list[tuple[int, int]] = []
-            for action, (dx, dy) in ACTION_TO_DELTA.items():
-                nxt = (scene.player[0] + dx, scene.player[1] + dy)
-                if not is_walkable(scene, nxt, self.opened):
-                    continue
-                chest_distance = min(
-                    (manhattan(nxt, chest) for chest in scene.chests),
-                    default=0,
-                )
-                shielded_moves.append((-chest_distance, action))
-            if shielded_moves:
-                _score, shielded_action = max(shielded_moves)
-                self.move_queue.clear()
-                self.move_queue.extend([shielded_action] * 4)
-                self.queue_next_move = False
-                self.last_move = shielded_action
-                return self._emit(shielded_action)
-
-        if self.attack_cooldown > 0:
-            self.attack_cooldown -= 1
-            return self._emit(ACTION_A)
-
-        if adjacent_monsters and "sword" in tools_now and not avoid_auto_attack_task4:
-            monster = min(adjacent_monsters, key=lambda m: manhattan(scene.player, m))
+        # Spatial variants can place an NPC on the same visual tile as a
+        # monster.  Pressing A there prioritizes conversation, so disengage
+        # and route around the overlap instead of entering an A/B loop.
+        attack_monsters = [
+            monster
+            for monster in adjacent_monsters
+            if monster not in scene.npcs
+        ]
+        if attack_monsters and "sword" in tools_now and not avoid_auto_attack_task4:
+            # Always replan after combat, even when we already face the
+            # monster.  Previously only the turn-to-face branch cleared this
+            # queue, leaving stale movement after a direct attack.
+            self.move_queue.clear()
+            monster = min(attack_monsters, key=lambda m: manhattan(scene.player, m))
             face = direction_action(scene.player, monster)
 
             if face in MOVE_ACTIONS and self.last_move != face:
                 self.last_move = face
-                self.move_queue.clear()
                 self.attack_cooldown = 1
                 return self._emit(face)
 
-            self.attack_cooldown = 0 if self.task_id.endswith("task_5") else 2
+            self.attack_cooldown = 2
             return self._emit(ACTION_A)
+
+        if task5_west_branch and scene.monsters:
+            monster = min(
+                scene.monsters,
+                key=lambda pos: manhattan(scene.player, pos),
+            )
+            if manhattan(scene.player, monster) == 2:
+                path = bfs(
+                    scene,
+                    approach_tiles(scene, monster, self.opened),
+                    self.opened,
+                    avoid=danger_zone(scene.npcs, 1),
+                )
+                if path and len(path) > 1:
+                    action = action_from_step(path[0], path[1])
+                    self.last_move = action
+                    return self._emit(action)
 
         target = self._select_target(scene, inv)
         action = self._action_for_target(scene, target)
@@ -1287,17 +1452,15 @@ class Policy:
 
             self.queue_next_move = True
 
-        if (
-            action == ACTION_A
-            and target
-            and target[0] in {"open", "task5_safe_open", "task5_south_open"}
-        ):
+        if action == ACTION_A and target and target[0] == "open":
             key = self.current_room or room_key(scene)
             self.rooms[key].opened_chests.add(target[1])
             self.opened.add((scene.room_hint, target[1]))
 
         if action == ACTION_A and target and target[0] == "switch":
             self.switch_count += 1
+            if self.task_id.endswith("task_4") and self.task4_adjust_bridge:
+                self.task4_adjust_bridge = False
 
         return self._emit(action)
 
@@ -1324,6 +1487,18 @@ class Policy:
             self.move_queue.clear()
             self.pending_exit = None
             self.stationary_steps = 0
+            if self.task_id.endswith("task_5"):
+                is_west_branch = (
+                    scene.room_hint == "single_exit_branch"
+                    and (
+                        "east" in memory.edges
+                        or len(scene.monsters) >= 2
+                        or any(y >= 5 for _, y in scene.walls)
+                    )
+                )
+                is_hub = scene.room_hint == "multi_exit_hub"
+                self.task5_entry_guard = 2 if (is_west_branch or is_hub) else 0
+                self.task5_exit_guard = 0
 
         self.current_room = key
 
@@ -1426,41 +1601,51 @@ class Policy:
 
         This avoids reading health or internal feedback. It opens visible reachable
         chests, steps on visible buttons, and explores exits using the visual
-        room graph. Adjacent monsters are handled by the generic sword guard in
-        act(); the policy does not proactively chase optional monsters.
+        room graph. Adjacent monsters are handled by the generic sword/shield
+        guard in act(); optional monsters are not chased because Task 5 has a
+        strict time-based health drain.
         """
         key = self.current_room or room_key(scene)
         memory = self.rooms[key]
-        unopened_chests = {
-            pos
-            for pos in scene.chests
-            if (scene.room_hint, pos) not in self.opened
-        }
-
-        if (
-            scene.room_hint == "task2"
-            and unopened_chests
-            and min(pos[0] for pos in unopened_chests) <= 7
-        ):
-            chest = min(unopened_chests, key=lambda pos: manhattan(scene.player, pos))
-            return ("task5_south_open", chest)
-
-        if (
-            scene.room_hint == "single_exit_branch"
-            and len(scene.monsters) >= 2
-            and unopened_chests
-        ):
-            chest = min(unopened_chests, key=lambda pos: manhattan(scene.player, pos))
-            return ("task5_safe_open", chest)
 
         chest = self._nearest_chest(scene)
         if chest is not None:
             return chest
 
-        if scene.buttons:
+        if memory.button_seen and not scene.buttons:
+            memory.button_done = True
+
+        if scene.buttons and not memory.button_done:
             memory.button_seen = True
             button = min(scene.buttons, key=lambda pos: manhattan(scene.player, pos))
             return ("walk", button)
+
+        # Task 5's central room exposes three exits.  Use inventory and the
+        # visually learned room graph to advance subgoals without repeatedly
+        # revisiting the already completed button/key branch.
+        if scene.room_hint == "multi_exit_hub":
+            if (
+                keys <= 0
+                and scene.exits["south"]
+                and "south" not in memory.edges
+            ):
+                return ("exit", "south")
+
+            if "south" in memory.edges and scene.active_monsters:
+                return (
+                    "monster",
+                    self._nearest_reachable_interaction(scene, scene.active_monsters),
+                )
+
+            # Heal in the east room before the combat-heavy west branch.  The
+            # hub chaser is cleared above so returning from east stays safe.
+            for direction in ("east", "west", "south", "north"):
+                if (
+                    scene.exits[direction]
+                    and direction not in memory.edges
+                    and self.blocked_exits.get((key, direction), -1) < keys
+                ):
+                    return ("exit", direction)
 
         direction = self._next_exploration_exit(key, keys)
         if direction is not None:
@@ -1527,9 +1712,18 @@ class Policy:
             scene.room_hint == "task4_center"
             and has_sword
             and "task4_south" in self.visited_hints
-            and scene.chests
         ):
-            return self._nearest_chest(scene)
+            chest = self._nearest_chest(scene)
+            if chest is not None:
+                self.task4_adjust_bridge = False
+                return chest
+
+            # A spatial variant can reveal the final chest on an abyss tile not
+            # covered by the current bridge.  The trap layer then completely
+            # hides the chest sprite, so absence from the pixels is itself the
+            # signal to rotate once in the west room and re-check the center.
+            self.task4_adjust_bridge = True
+            return ("exit", "west")
 
         if keys <= 0:
             if scene.room_hint == "task4_center":
@@ -1616,6 +1810,8 @@ class Policy:
             return self._nearest_chest(scene)
 
         if scene.room_hint == "task4_west":
+            if self.task4_adjust_bridge and scene.switches:
+                return ("switch", next(iter(scene.switches)))
             return ("exit", "east")
 
         if scene.room_hint == "task4_east":
@@ -1631,108 +1827,6 @@ class Policy:
             return ACTION_NOOP
 
         kind, value = target
-
-        if kind == "task5_south_open":
-            target_pos = value
-            if manhattan(scene.player, target_pos) == 1:
-                face = direction_action(scene.player, target_pos)
-                if face in MOVE_ACTIONS and self.last_move != face:
-                    self.queue_next_move = False
-                    return face
-                return ACTION_A
-
-            x, y = scene.player
-            center_x, center_y = self.player_center_px or (
-                x * TILE_SIZE + (TILE_SIZE - 1) / 2.0,
-                y * TILE_SIZE + (TILE_SIZE - 1) / 2.0,
-            )
-            spawn_row_center = 1 * TILE_SIZE + (TILE_SIZE - 1) / 2.0
-            approach_col = min(target_pos[0] + 1, MAP_TILE_WIDTH - 1)
-            approach_col_center = approach_col * TILE_SIZE + (TILE_SIZE - 1) / 2.0
-            target_row_center = target_pos[1] * TILE_SIZE + (TILE_SIZE - 1) / 2.0
-
-            if center_x < approach_col_center - 1.0:
-                if center_y < spawn_row_center - 1.0:
-                    safe_action = ACTION_DOWN
-                elif center_y > spawn_row_center + 1.0:
-                    safe_action = ACTION_UP
-                else:
-                    safe_action = ACTION_RIGHT
-            elif center_y < target_row_center - 1.0:
-                safe_action = ACTION_DOWN
-            else:
-                return self._walk_to(
-                    scene,
-                    approach_tiles(scene, target_pos, self.opened),
-                    avoid=set(),
-                )
-
-            self.move_queue.clear()
-            self.queue_next_move = False
-            return safe_action
-
-        if kind == "task5_safe_open":
-            target_pos = value
-            if manhattan(scene.player, target_pos) == 1:
-                face = direction_action(scene.player, target_pos)
-                if face in MOVE_ACTIONS and self.last_move != face:
-                    self.queue_next_move = False
-                    return face
-                return ACTION_A
-
-            x, y = scene.player
-            center_x, center_y = self.player_center_px or (
-                x * TILE_SIZE + (TILE_SIZE - 1) / 2.0,
-                y * TILE_SIZE + (TILE_SIZE - 1) / 2.0,
-            )
-            corridor_row_center = 4 * TILE_SIZE + (TILE_SIZE - 1) / 2.0
-            target_col_center = target_pos[0] * TILE_SIZE + (TILE_SIZE - 1) / 2.0
-            approach_row_center = (target_pos[1] - 1) * TILE_SIZE + (TILE_SIZE - 1) / 2.0
-
-            if any(
-                monster[1] == 4
-                and target_pos[0] <= monster[0] <= scene.player[0]
-                for monster in scene.monsters
-            ):
-                self.task5_use_bottom_route = True
-
-            if self.task5_use_bottom_route:
-                bottom_row_center = (MAP_TILE_HEIGHT - 1) * TILE_SIZE + (TILE_SIZE - 1) / 2.0
-                if center_y < bottom_row_center - 1.0:
-                    safe_action = ACTION_DOWN
-                elif center_x > target_col_center + 1.0:
-                    safe_action = ACTION_LEFT
-                elif center_y > approach_row_center + 1.0:
-                    safe_action = ACTION_UP
-                else:
-                    return self._walk_to(
-                        scene,
-                        approach_tiles(scene, target_pos, self.opened),
-                        avoid=set(),
-                    )
-
-                self.move_queue.clear()
-                self.queue_next_move = False
-                return safe_action
-
-            if center_y < corridor_row_center - 1.0:
-                safe_action = ACTION_DOWN
-            elif center_y > corridor_row_center + 1.0:
-                safe_action = ACTION_UP
-            elif center_x > target_col_center + 1.0:
-                safe_action = ACTION_LEFT
-            elif center_y < approach_row_center - 1.0:
-                safe_action = ACTION_DOWN
-            else:
-                return self._walk_to(
-                    scene,
-                    approach_tiles(scene, target_pos, self.opened),
-                    avoid=danger_zone(scene.ambush_monsters, 1),
-                )
-
-            self.move_queue.clear()
-            self.queue_next_move = False
-            return safe_action
 
         if kind == "exit":
             return self._exit_action(scene, str(value))
@@ -1790,11 +1884,26 @@ class Policy:
         if not goals:
             return ACTION_NOOP
 
-        if avoid is None and self.task_id.endswith("task_5"):
-            avoid = danger_zone(scene.active_monsters or scene.monsters, 1)
-            avoid.discard(scene.player)
-            avoid -= goals
-        path = bfs(scene, goals, self.opened, avoid=avoid)
+        combined_avoid = set(avoid or ())
+        if self.task_id.endswith("task_5"):
+            # Caller-supplied exclusions (for example other door tiles) must
+            # not disable monster avoidance.  The old either/or behaviour
+            # routed straight through the hub chaser whenever an exit target
+            # supplied its own avoid set.
+            monster_danger = danger_zone(scene.active_monsters or scene.monsters, 1)
+            safe_goals = goals - monster_danger
+            if safe_goals:
+                goals = safe_goals
+            combined_avoid |= monster_danger
+            combined_avoid |= danger_zone(scene.npcs, 1)
+            combined_avoid.discard(scene.player)
+            combined_avoid -= goals
+        path = bfs(
+            scene,
+            goals,
+            self.opened,
+            avoid=combined_avoid or None,
+        )
 
         if path and len(path) > 1:
             return action_from_step(path[0], path[1])
@@ -1805,47 +1914,48 @@ class Policy:
         action = DIR_TO_ACTION.get(direction, ACTION_NOOP)
         if self.current_room is not None:
             self.pending_exit = (self.current_room, direction)
-        exits = set(scene.exits.get(direction, set()))
-
-        if (
-            self.task_id.endswith("task_5")
-            and scene.room_hint == "multi_exit_hub"
-            and direction in {"east", "west"}
-            and self.player_center_px is not None
-        ):
-            target_y = scene.player[1] * TILE_SIZE + (TILE_SIZE - 1) / 2.0
-            delta_y = target_y - self.player_center_px[1]
-            if abs(delta_y) > 1.0:
-                align_action = ACTION_DOWN if delta_y > 0 else ACTION_UP
-                self.move_queue.clear()
-                self.queue_next_move = False
-                return align_action
-
-        default_exits = default_exit_tiles(direction)
-        if direction == "south" and not scene.monsters and scene.player in default_exits:
-            self.move_queue.extend([action] * 19)
-            return action
+        exits = scene.exits.get(direction, set())
 
         if not exits:
-            exits = default_exits
+            exits = default_exit_tiles(direction)
 
         if scene.player in exits:
+            if (
+                self.task_id.endswith("task_5")
+                and direction == "east"
+                and not scene.monsters
+                and self.current_player_px is not None
+            ):
+                _, py = self.current_player_px
+                delta = scene.player[1] * TILE_SIZE - py
+                if abs(delta) >= 1:
+                    align_action = ACTION_DOWN if delta > 0 else ACTION_UP
+                    steps = max(1, int(round(abs(delta))))
+                    self.task5_alignment_action = align_action
+                    self.task5_alignment_steps = steps - 1
+                    self.queue_next_move = False
+                    return align_action
+            if self.task_id.endswith("task_5"):
+                if self.task5_exit_guard <= 0:
+                    self.task5_exit_guard = 5
+                    self.queue_next_move = False
+                    return ACTION_B
+                self.task5_exit_guard -= 1
+                self.queue_next_move = False
+                return action
             self.move_queue.extend([action] * 19)
             return action
 
         walkable_exits = {
             pos for pos in exits if is_walkable(scene, pos, self.opened) or pos in exits
         }
+        other_exit_tiles: set[Position] = set()
+        for other_direction, tiles in scene.exits.items():
+            if other_direction != direction:
+                other_exit_tiles.update(tiles)
+        other_exit_tiles.discard(scene.player)
 
-        other_exits: set[Position] = set()
-        for other_direction in ("north", "south", "west", "east"):
-            if other_direction == direction:
-                continue
-            other_exits.update(scene.exits.get(other_direction, set()))
-            other_exits.update(default_exit_tiles(other_direction))
-        other_exits.discard(scene.player)
-
-        return self._walk_to(scene, walkable_exits, avoid=other_exits)
+        return self._walk_to(scene, walkable_exits, avoid=other_exit_tiles)
 
 
 def make_policy() -> Policy:
