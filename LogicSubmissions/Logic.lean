@@ -123,6 +123,7 @@ def nextPosition (p : Position) : Action → Position
 structure Inventory where
   keys : Nat
   gold : Nat
+  health : Nat
   hasSword : Bool
   hasShield : Bool
   deriving DecidableEq, Repr
@@ -137,6 +138,7 @@ inductive ChestLoot where
   | none
   | key
   | gold
+  | heal
   | sword
   | shield
   deriving DecidableEq, Repr
@@ -146,6 +148,7 @@ def applyLoot (loot : ChestLoot) (inv : Inventory) : Inventory :=
   | ChestLoot.none => inv
   | ChestLoot.key => { inv with keys := inv.keys + 1 }
   | ChestLoot.gold => { inv with gold := inv.gold + 1 }
+  | ChestLoot.heal => { inv with health := inv.health + 1 }
   | ChestLoot.sword => { inv with hasSword := true }
   | ChestLoot.shield => { inv with hasShield := true }
 
@@ -383,6 +386,14 @@ theorem afterOpenSwordChest_hasSword
     {s : SymbolicState} {c : ChestRule}
     (hLoot : c.loot = ChestLoot.sword) :
     (afterOpenChest s c).inventory.hasSword = true := by
+  cases c with
+  | mk pos loot =>
+      cases loot <;> simp [afterOpenChest, applyLoot] at hLoot ⊢
+
+theorem afterOpenHealChest_health
+    {s : SymbolicState} {c : ChestRule}
+    (hLoot : c.loot = ChestLoot.heal) :
+    (afterOpenChest s c).inventory.health = s.inventory.health + 1 := by
   cases c with
   | mk pos loot =>
       cases loot <;> simp [afterOpenChest, applyLoot] at hLoot ⊢
@@ -766,6 +777,13 @@ theorem open_sword_chest_gives_sword
     HasSword (afterOpenChest s c) := by
   unfold HasSword
   exact afterOpenSwordChest_hasSword hLoot
+
+theorem open_heal_chest_increases_health
+    {s : SymbolicState} {c : ChestRule}
+    (_hOpen : canOpenChest s c)
+    (hLoot : c.loot = ChestLoot.heal) :
+    (afterOpenChest s c).inventory.health = s.inventory.health + 1 := by
+  exact afterOpenHealChest_health hLoot
 
 /- -------------------------------------------------------------------------- -/
 /- Task-level abstract composition theorems                                   -/
