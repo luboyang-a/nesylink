@@ -167,6 +167,12 @@ structure ExitRule where
   completeTask : Bool := false
   deriving DecidableEq, Repr
 
+/- A Task 4 rotation replaces the complete set of gap tiles covered by bridge. -/
+structure BridgeRotation where
+  switchPos : Position
+  openBridges : List Position
+  deriving DecidableEq, Repr
+
 structure SymbolicState where
   player : Position
   exits : List Position
@@ -297,6 +303,9 @@ def canStartCombat (s : SymbolicState) (m : Position) : Prop :=
 def canToggleSwitch (s : SymbolicState) (sw : Position) : Prop :=
   sw ∈ s.switches ∧ adjacent s.player sw
 
+def canRotateBridge (s : SymbolicState) (rotation : BridgeRotation) : Prop :=
+  canToggleSwitch s rotation.switchPos
+
 def canUseExit (s : SymbolicState) (e : ExitRule) : Prop :=
   e.pos ∈ s.exits ∧
   s.player = e.pos ∧
@@ -334,6 +343,12 @@ theorem canToggleSwitch_switch_mem
     sw ∈ s.switches := by
   exact h.1
 
+theorem canRotateBridge_switch_mem
+    {s : SymbolicState} {rotation : BridgeRotation}
+    (h : canRotateBridge s rotation) :
+    rotation.switchPos ∈ s.switches := by
+  exact canToggleSwitch_switch_mem h
+
 theorem canUseExit_has_required_keys
     {s : SymbolicState} {e : ExitRule}
     (h : canUseExit s e) :
@@ -368,6 +383,11 @@ def afterDefeatMonster (s : SymbolicState) (m : Position) : SymbolicState :=
 
 def afterToggleSwitch (s : SymbolicState) (_sw : Position) : SymbolicState :=
   { s with switchCount := s.switchCount + 1 }
+
+def afterRotateBridge (s : SymbolicState) (rotation : BridgeRotation) : SymbolicState :=
+  { s with
+    bridges := rotation.openBridges
+    switchCount := s.switchCount + 1 }
 
 def afterUseExit (s : SymbolicState) (e : ExitRule) : SymbolicState :=
   { s with
@@ -413,6 +433,28 @@ theorem afterToggleSwitch_count
     (afterToggleSwitch s sw).switchCount = s.switchCount + 1 := by
   rfl
 
+theorem afterRotateBridge_layout
+    {s : SymbolicState} {rotation : BridgeRotation} :
+    (afterRotateBridge s rotation).bridges = rotation.openBridges := by
+  rfl
+
+theorem afterRotateBridge_count
+    {s : SymbolicState} {rotation : BridgeRotation} :
+    (afterRotateBridge s rotation).switchCount = s.switchCount + 1 := by
+  rfl
+
+theorem afterRotateBridge_opens_target
+    {s : SymbolicState} {rotation : BridgeRotation} {target : Position}
+    (hOpen : target ∈ rotation.openBridges) :
+    target ∈ (afterRotateBridge s rotation).bridges := by
+  simpa [afterRotateBridge] using hOpen
+
+theorem afterRotateBridge_closes_non_target
+    {s : SymbolicState} {rotation : BridgeRotation} {target : Position}
+    (hClosed : target ∉ rotation.openBridges) :
+    target ∉ (afterRotateBridge s rotation).bridges := by
+  simpa [afterRotateBridge] using hClosed
+
 theorem afterUseExit_player
     {s : SymbolicState} {e : ExitRule} :
     (afterUseExit s e).player = e.target := by
@@ -457,6 +499,10 @@ inductive Step : SymbolicState → Action → SymbolicState → Prop where
       {s : SymbolicState} {sw : Position} :
       canToggleSwitch s sw →
       Step s Action.attack (afterToggleSwitch s sw)
+  | rotateBridge
+      {s : SymbolicState} {rotation : BridgeRotation} :
+      canRotateBridge s rotation →
+      Step s Action.attack (afterRotateBridge s rotation)
   | useExit
       {s : SymbolicState} {e : ExitRule} :
       canUseExit s e →
@@ -524,6 +570,12 @@ theorem exec_toggle_switch
     Exec s [Action.attack] (afterToggleSwitch s sw) := by
   exact Exec.cons (Step.toggleSwitch h) Exec.nil
 
+theorem exec_rotate_bridge
+    {s : SymbolicState} {rotation : BridgeRotation}
+    (h : canRotateBridge s rotation) :
+    Exec s [Action.attack] (afterRotateBridge s rotation) := by
+  exact Exec.cons (Step.rotateBridge h) Exec.nil
+
 theorem exec_use_exit
     {s : SymbolicState} {e : ExitRule}
     (h : canUseExit s e) :
@@ -554,10 +606,56 @@ def ValidPath (s : SymbolicState) : List Position → Prop
   | p :: q :: rest =>
       adjacent p q ∧ isSafe s q ∧ ValidPath s (q :: rest)
 
+def decidableStartsAt (start : Position) :
+    (path : List Position) → Decidable (StartsAt start path)
+  | [] => isFalse (by simp [StartsAt])
+  | p :: _ => inferInstanceAs (Decidable (p = start))
+
+def decidableEndsIn (goals : List Position) :
+    (path : List Position) → Decidable (EndsIn goals path)
+  | [] => isFalse (by simp [EndsIn])
+  | [p] => inferInstanceAs (Decidable (p ∈ goals))
+  | _ :: q :: rest => decidableEndsIn goals (q :: rest)
+
+instance instDecidableAdjacent (a b : Position) : Decidable (adjacent a b) := by
+  unfold adjacent
+  infer_instance
+
+instance instDecidableIsSafe (s : SymbolicState) (p : Position) :
+    Decidable (isSafe s p) := by
+  unfold isSafe inBounds
+  infer_instance
+
+def decidableValidPath (s : SymbolicState) :
+    (path : List Position) → Decidable (ValidPath s path)
+  | [] => isTrue (by simp [ValidPath])
+  | [_] => isTrue (by simp [ValidPath])
+  | p :: q :: rest => by
+      let dAdj : Decidable (adjacent p q) := inferInstance
+      cases dAdj with
+      | isFalse hAdj => exact isFalse (fun h => hAdj h.1)
+      | isTrue hAdj =>
+          let dSafe : Decidable (isSafe s q) := inferInstance
+          cases dSafe with
+          | isFalse hSafe => exact isFalse (fun h => hSafe h.2.1)
+          | isTrue hSafe =>
+              cases decidableValidPath s (q :: rest) with
+              | isTrue hTail => exact isTrue ⟨hAdj, hSafe, hTail⟩
+              | isFalse hTail => exact isFalse (fun h => hTail h.2.2)
+
+instance instDecidableStartsAt (start : Position) (path : List Position) :
+    Decidable (StartsAt start path) := decidableStartsAt start path
+
+instance instDecidableEndsIn (goals : List Position) (path : List Position) :
+    Decidable (EndsIn goals path) := decidableEndsIn goals path
+
+instance instDecidableValidPath (s : SymbolicState) (path : List Position) :
+    Decidable (ValidPath s path) := decidableValidPath s path
+
 /-
   PathPlanSound is the contract expected from the Python BFS layer.
-  Lean proves properties of any path satisfying this contract.  It does not
-  mechanically prove that the Python function bfs always returns such a path.
+  Concrete Python paths can be serialized and checked by checkPathPlan below.
+  This validates exported executions; it does not prove Python bfs universally.
 -/
 structure PathPlanSound
     (s : SymbolicState)
@@ -567,6 +665,25 @@ structure PathPlanSound
   starts : StartsAt start path
   valid : ValidPath s path
   reaches : EndsIn goals path
+
+def checkPathPlan
+    (s : SymbolicState)
+    (start : Position)
+    (goals : List Position)
+    (path : List Position) : Bool :=
+  decide (StartsAt start path) &&
+  decide (ValidPath s path) &&
+  decide (EndsIn goals path)
+
+theorem checkPathPlan_sound
+    {s : SymbolicState}
+    {start : Position}
+    {goals path : List Position}
+    (h : checkPathPlan s start goals path = true) :
+    PathPlanSound s start goals path := by
+  unfold checkPathPlan at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  exact ⟨h.1.1, h.1.2, h.2⟩
 
 def SafePath (s : SymbolicState) (path : List Position) : Prop :=
   ValidPath s path
@@ -966,6 +1083,43 @@ theorem task4_toggle_switch_increases_counter
   rw [afterToggleSwitch_count]
   exact Nat.le_refl (s.switchCount + 1)
 
+theorem task4_rotate_bridge_increases_counter
+    {s : SymbolicState} {rotation : BridgeRotation}
+    (_hRotate : canRotateBridge s rotation) :
+    SwitchCountAtLeast (s.switchCount + 1) (afterRotateBridge s rotation) := by
+  unfold SwitchCountAtLeast
+  rw [afterRotateBridge_count]
+  exact Nat.le_refl (s.switchCount + 1)
+
+theorem task4_rotation_opens_target_gap
+    {s : SymbolicState} {rotation : BridgeRotation} {target : Position}
+    (_hGap : target ∈ s.gaps)
+    (hOpen : target ∈ rotation.openBridges) :
+    target ∈ (afterRotateBridge s rotation).bridges := by
+  exact afterRotateBridge_opens_target hOpen
+
+theorem task4_rotation_closes_non_target_gap
+    {s : SymbolicState} {rotation : BridgeRotation} {target : Position}
+    (_hGap : target ∈ s.gaps)
+    (hClosed : target ∉ rotation.openBridges) :
+    target ∉ (afterRotateBridge s rotation).bridges := by
+  exact afterRotateBridge_closes_non_target hClosed
+
+theorem task4_open_target_gap_is_safe
+    {s : SymbolicState} {rotation : BridgeRotation} {target : Position}
+    (hBounds : inBounds target)
+    (hWall : target ∉ s.walls)
+    (hTrap : target ∉ s.traps)
+    (hMonster : target ∉ s.monsters)
+    (hChest : target ∉ s.chests)
+    (hNpc : target ∉ s.npcs)
+    (_hGap : target ∈ s.gaps)
+    (hOpen : target ∈ rotation.openBridges) :
+    isSafe (afterRotateBridge s rotation) target := by
+  unfold isSafe
+  simp only [afterRotateBridge]
+  exact ⟨hBounds, hWall, hTrap, hMonster, hChest, hNpc, Or.inr hOpen⟩
+
 theorem task4_open_sword_chest_gives_sword
     {s : SymbolicState} {swordChest : ChestRule}
     (hOpen : canOpenChest s swordChest)
@@ -994,6 +1148,37 @@ theorem task4_bridge_stage_strategy_correct
   · exact exec_append hPrepare
       (exec_append hGoExit
         (exec_use_exit hExit))
+
+  · unfold TaskCompletedByExit
+    constructor
+    · exact afterUseExit_player
+    · exact afterUseExit_completed hExitComplete
+
+theorem task4_rotate_bridge_then_exit_strategy_correct
+    {s0 s1 s2 : SymbolicState}
+    {rotation : BridgeRotation}
+    {exitRule : ExitRule}
+    {goSwitch goExit : List Action}
+    (hExitComplete : exitRule.completeTask = true)
+    (hGoSwitch : Exec s0 goSwitch s1)
+    (hRotate : canRotateBridge s1 rotation)
+    (hGoExit : Exec (afterRotateBridge s1 rotation) goExit s2)
+    (hExit : canUseExit s2 exitRule) :
+    ∃ plan,
+      SuccessfulPlan s0 plan (TaskCompletedByExit exitRule) := by
+  let plan :=
+    goSwitch ++
+      ([Action.attack] ++
+        (goExit ++ [actionForDir exitRule.direction]))
+
+  refine ⟨plan, ?_⟩
+  unfold SuccessfulPlan
+  refine ⟨afterUseExit s2 exitRule, ?_, ?_⟩
+
+  · exact exec_append hGoSwitch
+      (exec_append (exec_rotate_bridge hRotate)
+        (exec_append hGoExit
+          (exec_use_exit hExit)))
 
   · unfold TaskCompletedByExit
     constructor
