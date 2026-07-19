@@ -20,7 +20,7 @@ env = make_env(
     observation_mode="pixels",
     render_mode=None,
 )
-policy = load_policy("submissions/robust_cxy_agent.py")
+policy = load_policy("submissions/robust_final_agent.py")
 policy.reset()
 raw_obs, raw_info = env.reset(seed=seed)
 obs = apply_obs_variant(raw_obs, "default", info=raw_info, env=env)

@@ -10,7 +10,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from nesylink.env import make_env
-from submissions.robust_cxy_agent import approach_tiles, bfs, extract_scene, manhattan
+from submissions.robust_final_agent import approach_tiles, bfs, extract_scene, manhattan
 
 
 TASK_ID = "mathematical_logic/task_1"

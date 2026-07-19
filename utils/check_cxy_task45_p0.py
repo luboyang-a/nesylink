@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import argparse
+
 from evaluate_policy import load_policy, run_episode
 
 
@@ -13,7 +15,10 @@ CASES = (
 
 
 def main() -> None:
-    policy = load_policy("submissions/robust_cxy_agent.py")
+    parser = argparse.ArgumentParser(description="Run CXY Task 4/5 P0 regressions.")
+    parser.add_argument("--policy", default="submissions/robust_final_agent.py")
+    args = parser.parse_args()
+    policy = load_policy(args.policy)
     failures: list[str] = []
 
     for task_id, map_variant, obs_variant, seed in CASES:
@@ -42,7 +47,7 @@ def main() -> None:
     if failures:
         raise SystemExit("CXY P0 regression failures: " + ", ".join(failures))
 
-    print("CXY Task 4/5 P0 regression check passed.")
+    print(f"CXY Task 4/5 P0 regression check passed for {args.policy}.")
 
 
 if __name__ == "__main__":

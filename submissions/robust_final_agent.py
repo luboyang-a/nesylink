@@ -18,8 +18,8 @@ from nesylink.core.constants import (
     MAP_TILE_WIDTH,
     TILE_SIZE,
 )
-from submissions.robust_cxy_legacy_agent import Policy as SpatialCLegacyPolicy
-from submissions.robust_team_snapshot_agent import Policy as TeamSnapshotPolicy
+from submissions.robust_final_legacy_agent import Policy as SpatialCLegacyPolicy
+from submissions.robust_final_snapshot_agent import Policy as TeamSnapshotPolicy
 
 
 Position = tuple[int, int]

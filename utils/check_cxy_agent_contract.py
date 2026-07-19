@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import sys
 
 from nesylink.env import make_env
@@ -7,13 +8,17 @@ from evaluate_policy import build_safe_info, call_policy, reset_policy, resolve_
 
 
 TASKS = [f"mathematical_logic/task_{index}" for index in range(1, 6)]
-POLICY_SPEC = "submissions/robust_cxy_agent.py"
+DEFAULT_POLICY_SPEC = "submissions/robust_final_agent.py"
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Check a CXY policy entry contract.")
+    parser.add_argument("--policy", default=DEFAULT_POLICY_SPEC)
+    args = parser.parse_args()
+    policy_spec = args.policy
     bindings = resolve_policies(
         default_policy_spec=None,
-        task_policy_specs=[f"{task}={POLICY_SPEC}" for task in TASKS],
+        task_policy_specs=[f"{task}={policy_spec}" for task in TASKS],
         task_ids=TASKS,
     )
 
@@ -88,8 +93,8 @@ def main() -> None:
     imported_forbidden = sorted(forbidden_modules.intersection(sys.modules))
     assert not imported_forbidden, f"unexpected cxy-policy imports: {imported_forbidden}"
 
-    print("CXY Agent contract check passed for task_1 through task_5.")
-    print("- one shared robust_cxy_agent Policy object is bound to all five tasks")
+    print(f"CXY Agent contract check passed for {policy_spec}.")
+    print("- one shared Policy object is bound to all five tasks")
     print("- reset() clears main, legacy, snapshot, and Task 5 dispatch state")
     print("- safe_info contains only last_reward, inventory, and task_id")
     print("- each task produces a valid action and activates its bound task_id")
