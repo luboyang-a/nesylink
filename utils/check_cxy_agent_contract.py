@@ -34,8 +34,10 @@ def main() -> None:
         policy.pending_exit = (("stale", "room"), "east")
         policy.blocked_exits[(("stale", "room"), "east")] = 1
         policy.stationary_steps = 99
-        policy.task5_layout_decided = True
-        policy.task5_use_spatial_c_policy = True
+        policy.task5_dispatch_decided = True
+        policy.task5_use_legacy_topology = True
+        policy.task5_use_detour_route = True
+        policy.task5_route_entry_rows[(("stale", "room"), (1, 1))] = 4
         policy.cxy_legacy_policy.task_id = "stale_legacy"
         policy.team_snapshot_policy.task_id = "stale_snapshot"
 
@@ -50,8 +52,10 @@ def main() -> None:
         assert policy.pending_exit is None
         assert not policy.blocked_exits
         assert policy.stationary_steps == 0
-        assert not policy.task5_layout_decided
-        assert not policy.task5_use_spatial_c_policy
+        assert not policy.task5_dispatch_decided
+        assert not policy.task5_use_legacy_topology
+        assert not policy.task5_use_detour_route
+        assert not policy.task5_route_entry_rows
         assert policy.cxy_legacy_policy.task_id == ""
         assert policy.team_snapshot_policy.task_id == ""
 

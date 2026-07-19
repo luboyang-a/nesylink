@@ -850,6 +850,31 @@ def _room_hint(
     return "task1"
 
 
+def task5_prefers_legacy_topology(scene: Scene) -> bool:
+    """Select the legacy combat plan from relative visual geometry only.
+
+    The legacy plan is useful when the initial multi-exit hub places its chest
+    to the left of the button and its monster below the NPC.  Unlike the old
+    check for a chest at one exact tile, this relation survives translations
+    and small object-position changes while keeping the other layouts on the
+    generic exploration policy.
+    """
+    if (
+        scene.room_hint != "multi_exit_hub"
+        or not scene.chests
+        or not scene.buttons
+        or not scene.monsters
+        or not scene.npcs
+    ):
+        return False
+
+    chest = min(scene.chests, key=lambda pos: (pos[0], pos[1]))
+    button = min(scene.buttons, key=lambda pos: manhattan(chest, pos))
+    monster = min(scene.monsters, key=lambda pos: manhattan(scene.player, pos))
+    npc = min(scene.npcs, key=lambda pos: manhattan(monster, pos))
+    return chest[0] < button[0] and monster[1] > npc[1]
+
+
 def neighbors(pos: Position) -> Iterable[Position]:
     x, y = pos
     yield (x, y - 1)
@@ -1048,6 +1073,24 @@ def default_exit_tiles(direction: str) -> set[Position]:
     return set()
 
 
+def inferred_entry_row(scene: Scene, target: Position) -> int:
+    """Infer a stable interior travel row from the visible boundary entry."""
+    north = scene.exits.get("north", set())
+    south = scene.exits.get("south", set())
+    if north and scene.player[1] <= max(pos[1] for pos in north) + 1:
+        return min(MAP_TILE_HEIGHT - 1, max(pos[1] for pos in north) + 1)
+    if south and scene.player[1] >= min(pos[1] for pos in south) - 1:
+        return max(0, min(pos[1] for pos in south) - 1)
+    horizontal_rows = {
+        pos[1]
+        for direction in ("east", "west")
+        for pos in scene.exits.get(direction, set())
+    }
+    if horizontal_rows:
+        return min(horizontal_rows, key=lambda row: (abs(row - target[1]), row))
+    return scene.player[1]
+
+
 def _best_exit_tile(direction: str, player: Position) -> Position:
     exits = default_exit_tiles(direction)
     return min(exits, key=lambda pos: (manhattan(player, pos), pos))
@@ -1074,11 +1117,12 @@ class Policy:
         self.health = 999
         self.visual_mode = "default"
         self.player_center_px: tuple[float, float] | None = None
-        self.task5_use_bottom_route = False
+        self.task5_use_detour_route = False
+        self.task5_route_entry_rows: dict[tuple[RoomKey, Position], int] = {}
         self.cxy_legacy_policy = SpatialCLegacyPolicy()
         self.team_snapshot_policy = TeamSnapshotPolicy()
-        self.task5_layout_decided = False
-        self.task5_use_spatial_c_policy = False
+        self.task5_dispatch_decided = False
+        self.task5_use_legacy_topology = False
 
     def reset(self, seed: int | None = None, task_id: str | None = None) -> None:
         del seed
@@ -1102,11 +1146,12 @@ class Policy:
         self.health = 999
         self.visual_mode = "default"
         self.player_center_px = None
-        self.task5_use_bottom_route = False
+        self.task5_use_detour_route = False
+        self.task5_route_entry_rows.clear()
         self.cxy_legacy_policy.reset(task_id=task_id)
         self.team_snapshot_policy.reset(task_id=task_id)
-        self.task5_layout_decided = False
-        self.task5_use_spatial_c_policy = False
+        self.task5_dispatch_decided = False
+        self.task5_use_legacy_topology = False
 
     def act(self, obs: np.ndarray, info: dict[str, Any] | None = None) -> int:
         frame = np.asarray(obs)
@@ -1128,9 +1173,9 @@ class Policy:
             if isinstance(task_id_from_info, str) and task_id_from_info:
                 self.task_id = task_id_from_info
 
-        # Preserve the verified 0c3c087 behaviour for the fixed spatial_c
-        # layout.  Its initial hub chest at (2, 2) distinguishes it from the
-        # default map and spatial_a/b using pixels alone.
+        # Preserve the verified 0c3c087 behaviour for the hub geometry where
+        # its combat plan is safer. Dispatch uses relative pixel geometry, not
+        # a fixed coordinate or evaluator map-variant label.
         if self.task_id.endswith(("task_2", "task_4")):
             action = self.cxy_legacy_policy.act(obs, info)
             self.task_id = self.cxy_legacy_policy.task_id
@@ -1142,14 +1187,13 @@ class Policy:
             action = self.team_snapshot_policy.act(obs, info)
             self.task_id = self.team_snapshot_policy.task_id
             return action
-        if self.task_id.endswith("task_5") and not self.task5_layout_decided:
-            self.task5_use_spatial_c_policy = (
+        if self.task_id.endswith("task_5") and not self.task5_dispatch_decided:
+            self.task5_use_legacy_topology = (
                 self.visual_mode == "default"
-                and scene.room_hint == "multi_exit_hub"
-                and (2, 2) in scene.chests
+                and task5_prefers_legacy_topology(scene)
             )
-            self.task5_layout_decided = True
-        if self.task5_use_spatial_c_policy:
+            self.task5_dispatch_decided = True
+        if self.task5_use_legacy_topology:
             action = self.cxy_legacy_policy.act(obs, info)
             self.task_id = self.cxy_legacy_policy.task_id
             return action
@@ -1656,15 +1700,19 @@ class Policy:
                 x * TILE_SIZE + (TILE_SIZE - 1) / 2.0,
                 y * TILE_SIZE + (TILE_SIZE - 1) / 2.0,
             )
-            spawn_row_center = 1 * TILE_SIZE + (TILE_SIZE - 1) / 2.0
+            route_key = (self.current_room or room_key(scene), target_pos)
+            entry_row = self.task5_route_entry_rows.setdefault(
+                route_key, inferred_entry_row(scene, target_pos)
+            )
+            entry_row_center = entry_row * TILE_SIZE + (TILE_SIZE - 1) / 2.0
             approach_col = min(target_pos[0] + 1, MAP_TILE_WIDTH - 1)
             approach_col_center = approach_col * TILE_SIZE + (TILE_SIZE - 1) / 2.0
             target_row_center = target_pos[1] * TILE_SIZE + (TILE_SIZE - 1) / 2.0
 
             if center_x < approach_col_center - 1.0:
-                if center_y < spawn_row_center - 1.0:
+                if center_y < entry_row_center - 1.0:
                     safe_action = ACTION_DOWN
-                elif center_y > spawn_row_center + 1.0:
+                elif center_y > entry_row_center + 1.0:
                     safe_action = ACTION_UP
                 else:
                     safe_action = ACTION_RIGHT
@@ -1695,21 +1743,28 @@ class Policy:
                 x * TILE_SIZE + (TILE_SIZE - 1) / 2.0,
                 y * TILE_SIZE + (TILE_SIZE - 1) / 2.0,
             )
-            corridor_row_center = 4 * TILE_SIZE + (TILE_SIZE - 1) / 2.0
+            route_key = (self.current_room or room_key(scene), target_pos)
+            entry_row = self.task5_route_entry_rows.setdefault(
+                route_key, inferred_entry_row(scene, target_pos)
+            )
+            entry_row_center = entry_row * TILE_SIZE + (TILE_SIZE - 1) / 2.0
             target_col_center = target_pos[0] * TILE_SIZE + (TILE_SIZE - 1) / 2.0
             approach_row_center = (target_pos[1] - 1) * TILE_SIZE + (TILE_SIZE - 1) / 2.0
 
             if any(
-                monster[1] == 4
+                monster[1] == entry_row
                 and target_pos[0] <= monster[0] <= scene.player[0]
                 for monster in scene.monsters
             ):
-                self.task5_use_bottom_route = True
+                self.task5_use_detour_route = True
 
-            if self.task5_use_bottom_route:
-                bottom_row_center = (MAP_TILE_HEIGHT - 1) * TILE_SIZE + (TILE_SIZE - 1) / 2.0
-                if center_y < bottom_row_center - 1.0:
+            if self.task5_use_detour_route:
+                detour_row = MAP_TILE_HEIGHT - 1 if target_pos[1] >= entry_row else 0
+                detour_row_center = detour_row * TILE_SIZE + (TILE_SIZE - 1) / 2.0
+                if center_y < detour_row_center - 1.0:
                     safe_action = ACTION_DOWN
+                elif center_y > detour_row_center + 1.0:
+                    safe_action = ACTION_UP
                 elif center_x > target_col_center + 1.0:
                     safe_action = ACTION_LEFT
                 elif center_y > approach_row_center + 1.0:
@@ -1725,9 +1780,9 @@ class Policy:
                 self.queue_next_move = False
                 return safe_action
 
-            if center_y < corridor_row_center - 1.0:
+            if center_y < entry_row_center - 1.0:
                 safe_action = ACTION_DOWN
-            elif center_y > corridor_row_center + 1.0:
+            elif center_y > entry_row_center + 1.0:
                 safe_action = ACTION_UP
             elif center_x > target_col_center + 1.0:
                 safe_action = ACTION_LEFT

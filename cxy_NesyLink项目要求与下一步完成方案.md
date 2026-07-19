@@ -528,7 +528,7 @@ python utils/check_cxy_agent_contract.py
 
 2026-07-19 实测通过：五关均绑定同一个 `robust_cxy_agent.py` 对象；`safe_info` 仅含 `last_reward`、`inventory` 和 `task_id`；五关均输出 `0..6` 合法动作；主策略、legacy、团队快照和 Task 5 分派状态均可由无参数 `reset()` 清空。公共 `check_final_agent_contract.py`、`check_task45_p0.py` 和 `evaluate_final_agent.ps1` 仍测试团队 `robust_new_agent.py`，不作为个人 cxy 证据。
 
-实现上，个人候选入口是单一的 `submissions/robust_cxy_agent.py`：Task 4 和 Task 5 `spatial_c` 通过 `robust_cxy_legacy_agent.py` 复用曹潇月提交 `0c3c087` 中已经验证的像素策略；Task 5 `spatial_a/b` 使用后续加入的房间切换识别、宝箱路线和停滞恢复逻辑。布局选择只读取首帧像素、`inventory` 和 `task_id`，符合 `safe` 信息约束。公共 `robust_new_agent.py` 不参与这些个人 P0 结果。
+实现上，个人候选入口是单一的 `submissions/robust_cxy_agent.py`：Task 4 通过 `robust_cxy_legacy_agent.py` 复用曹潇月提交 `0c3c087` 中已经验证的像素策略；Task 5 默认渲染根据首房间的相对视觉几何选择通用探索策略或 legacy 战斗策略，不再使用 `(2, 2)` 等绝对坐标或 evaluator 的 `spatial_c` 标签。当前相对条件是“多出口 hub 中宝箱位于按钮左侧且怪物位于 NPC 下方”，整体平移和保持相对关系的小幅移动不会破坏分派。Task 5 两条危险开箱路线也不再固定第 1 行、第 4 行或底行，而是从可见入口、目标宝箱纵向位置和地图边界推导入口行及绕行方向。2026-07-19 重跑 Task 5 default、spatial A/B/C，分别以 1138、1148、1185、1130 步达到 `world_completed`；A/B/C 与修改前步数一致。该实现仍是双策略分派和相对几何路线，不声称对任意拓扑变化均已证明泛化。公共 `robust_new_agent.py` 不参与这些个人 P0 结果。
 
 Task 4 重点：
 
