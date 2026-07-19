@@ -27,6 +27,7 @@
 - [x] 我的 cxy 文件与团队公共 new 文件已经分开。
 - [x] 已完成五关各 10 episode 的 60/30/10 小样本，结果保存在 `eval_results/cxy_final_10.json`；共 50 局成功 40 局，总成功率 80%。
 - [x] 修复后复测结果保存在 `eval_results/cxy_final_10_fixed.json`；共 50 局成功 50 局，总成功率 100%。
+- [x] 已完成每关 100 episode、共 500 局的正式测评；成功 492 局，总成功率 98.4%，结果保存在 `eval_results/cxy_final_100.json`。
 
 ### 10-episode 小样本结果
 
@@ -51,12 +52,24 @@
 - 没有修改团队公共 `robust_new_agent.py` 或公共测试脚本；
 - 当前剩余颜色问题已经收敛为 high_contrast：Task 1、3、4、5 失败，Task 2 通过。
 
+### 100-episode 正式结果
+
+| Task | original | spatial | color | 总计 |
+|---|---:|---:|---:|---:|
+| Task 1 | 60/60 | 30/30 | 8/10 | 98/100 |
+| Task 2 | 60/60 | 30/30 | 10/10 | 100/100 |
+| Task 3 | 60/60 | 30/30 | 8/10 | 98/100 |
+| Task 4 | 60/60 | 30/30 | 8/10 | 98/100 |
+| Task 5 | 60/60 | 30/30 | 8/10 | 98/100 |
+
+正式测评使用提交 `9d27cef`，`info_mode=safe`，未覆盖 `max_steps` 和 `action_repeat`。8 个失败全部是 high_contrast（Task 1/3/4/5 各 2 局）；其他 original、spatial A/B/C、grayscale、dark、bright、inverted 全部通过。错误日志为空。
+
 ### 下一步（按顺序做）
 
 1. [x] **保存当前版本**：代码提交为 `a82dfcb`，个人进度文档提交为 `7232aa2`；
 2. [x] **跑 10 局小样本**：已生成 `eval_results/cxy_final_10.json`；
 3. [x] **修复小样本失败项**：Task 2 和 Task 5 grayscale 已修复，`cxy_final_10_fixed.json` 为 50/50；补充颜色中仅 high_contrast 尚未解决，作为已知局限记录；
-4. **跑 100 局正式测评**：保存 `eval_results/cxy_final_100.json`，记录命令、seed、commit、步数设置；
+4. [x] **跑 100 局正式测评**：已保存 `eval_results/cxy_final_100.json`；代码版本 `9d27cef`，总结果 492/500（98.4%）；
 5. **补 Lean 对应**：优先修正怪物 HP、宝箱 loot、按钮触发、Task 5 全宝箱目标，并整理 Python—Lean 对应表；
 6. **完成报告与提交包**：使用最终 JSON 写结果，补截图、失败案例、复现命令和干净环境测试；
 7. **团队最终选择**：比较每个人同口径结果，决定直接采用最佳 Agent，或把明确有效的修改合并到最终入口。
@@ -64,7 +77,7 @@
 ### 目前还没完成
 
 - [x] 当前 cxy 的五关 10-episode 60/30/10 小样本 JSON；
-- [ ] 每关 100 episode 的正式结果；
+- [x] 每关 100 episode 的正式结果；
 - [ ] Lean 与 Python 关键机制完全对齐；
 - [ ] 正式报告、截图、干净环境复现和最终 ZIP；
 - [ ] 团队最终 Agent 版本选择。
@@ -516,7 +529,7 @@ Task 5 必做：
 
 ### P1：运行正式分层测评
 
-当前状态：**未完成**。仓库现有 JSON 包括五关原始地图 smoke、Task 1–4 的历史 QN 结果和旧版 Task 4/5 P0 baseline，但没有针对当前 `robust_cxy_agent.py` 的五关完整 60/30/10 JSON。P0 的五个重点回归已在当前代码上逐项复现，但尚未保存为新的 JSON 文件。
+当前状态：**已完成**。当前 `robust_cxy_agent.py` 已完成五关每关 100 episode 的 60/30/10 正式测评，完整结果为 492/500（98.4%），保存在 `eval_results/cxy_final_100.json`。唯一系统性失败是 Task 1/3/4/5 的 high_contrast；Task 2 的 high_contrast 通过。
 
 按以下顺序执行：
 
